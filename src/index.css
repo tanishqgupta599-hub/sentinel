@@ -1,0 +1,38 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: #e5e7eb;
+  background-color: #0b0f1a;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  min-width: 320px;
+  background-color: #0b0f1a;
+}
+
+a {
+  font-weight: 500;
+  color: #67e8f9;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #22d3ee;
+}
