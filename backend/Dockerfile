@@ -4,15 +4,15 @@ FROM node:20-slim
 # Set the working directory
 WORKDIR /usr/src/app
 
-# --- The Fix: Specify the 'backend' subdirectory ---
+# --- The Fix: Specify the 'backend' subdirectory from the build context root ---
 # Copy the backend's package manifests
-COPY backend/package*.json ./
+COPY ./backend/package*.json ./
 
 # Install ONLY the backend's production dependencies
 RUN npm ci --only=production
 
 # Copy the entire backend source code into the working directory
-COPY backend/ .
+COPY ./backend/ .
 
 # Expose the port the app runs on
 EXPOSE 8080
