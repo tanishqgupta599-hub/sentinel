@@ -1,18 +1,17 @@
 # Use Node 20 slim image for a smaller footprint
 FROM node:20-slim
 
-# Set the working directory
+# Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# --- The Fix: Specify the 'backend' subdirectory from the build context root ---
-# Copy the backend's package manifests
-COPY ./backend/package*.json ./
+# Copy package manifests from the build context (which is the 'backend' folder)
+COPY package*.json ./
 
-# Install ONLY the backend's production dependencies
+# Install production dependencies
 RUN npm ci --only=production
 
-# Copy the entire backend source code into the working directory
-COPY ./backend/ .
+# Copy the rest of the application source code from the build context
+COPY . .
 
 # Expose the port the app runs on
 EXPOSE 8080
