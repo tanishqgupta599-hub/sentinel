@@ -4,14 +4,16 @@ FROM node:20-slim
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy package manifests from the build context (which is the 'backend' folder)
-COPY package*.json ./
+# --- This Dockerfile assumes the build context is the project root ---
 
-# Install production dependencies
+# Copy the backend's package manifests
+COPY backend/package*.json ./
+
+# Install ONLY the backend's production dependencies
 RUN npm ci --only=production
 
-# Copy the rest of the application source code from the build context
-COPY . .
+# Copy the entire backend source code into the working directory
+COPY backend/ .
 
 # Expose the port the app runs on
 EXPOSE 8080
