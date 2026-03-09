@@ -9,8 +9,8 @@ WORKDIR /usr/src/app
 # Copy the package.json and package-lock.json from the 'backend' directory.
 COPY backend/package*.json ./
 
-# Install production dependencies. This now correctly uses the backend's package.json.
-RUN npm ci --only=production
+# Install production dependencies. Using 'npm install' is more resilient in CI/CD.
+RUN npm install --only=production
 
 # Copy the rest of the backend's source code.
 COPY backend/ .
