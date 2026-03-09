@@ -1,26 +1,26 @@
-# Use Node 20 slim image for a smaller footprint
+# Use the official Node.js 20 slim image.
 FROM node:20-slim
 
-# Set the working directory inside the container
+# Set the working directory in the container.
 WORKDIR /usr/src/app
 
-# --- This Dockerfile assumes the build context is the project root ---
+# This Dockerfile assumes the build context is the project's ROOT directory.
 
-# Copy the backend's package manifests
+# Copy the package.json and package-lock.json from the 'backend' directory.
 COPY backend/package*.json ./
 
-# Install ONLY the backend's production dependencies
+# Install production dependencies. This now correctly uses the backend's package.json.
 RUN npm ci --only=production
 
-# Copy the entire backend source code into the working directory
+# Copy the rest of the backend's source code.
 COPY backend/ .
 
-# Expose the port the app runs on
+# Expose port 8080 to the outside world.
 EXPOSE 8080
 
-# Health check using the helper script
-HEALTHCHECK --interval=30s --timeout=3s \
+# Healthcheck to ensure the service is running correctly.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node healthcheck.js || exit 1
 
-# Run the web service on container startup
+# The command to run when the container starts.
 CMD [ "node", "server.js" ]
