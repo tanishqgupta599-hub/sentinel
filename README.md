@@ -11,6 +11,62 @@ Currently, two official plugins are available:
 
 The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Expanding the ESLint configuration
+## Backend Deploy to Cloud Run
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+This project is optimized for the **Gemini Live Agent Challenge** and can be deployed to Google Cloud Run.
+
+### ⚠️ Prerequisite
+You MUST navigate to the `backend/` directory in your terminal before running any command below:
+```bash
+cd backend
+```
+
+### Exact Deploy Command
+
+**For Bash (macOS/Linux/Git Bash):**
+```bash
+gcloud run deploy sentinel-api \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 8080 \
+  --set-env-vars "GEMINI_API_KEY=YOUR_GEMINI_API_KEY" \
+  --set-env-vars "GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY" \
+  --set-env-vars "PROJECT_ID=sentinel-ai-488011" \
+  --set-env-vars "LOCATION=us-central1"
+```
+
+**For PowerShell (Windows):**
+```powershell
+gcloud run deploy sentinel-api `
+  --source . `
+  --platform managed `
+  --region us-central1 `
+  --allow-unauthenticated `
+  --port 8080 `
+  --set-env-vars "GEMINI_API_KEY=YOUR_GEMINI_API_KEY" `
+  --set-env-vars "GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY" `
+  --set-env-vars "PROJECT_ID=sentinel-ai-488011" `
+  --set-env-vars "LOCATION=us-central1"
+```
+
+### Environment Variables List
+- `GEMINI_API_KEY`: Get from [aistudio.google.com](https://aistudio.google.com/)
+- `GOOGLE_MAPS_API_KEY`: Your Google Maps Platform key
+- `PROJECT_ID`: `sentinel-ai-488011`
+- `LOCATION`: `us-central1`
+
+### Test Locally
+```bash
+# Build the image
+docker build -t sentinel-api .
+
+# Run locally
+docker run -p 8080:8080 -e GEMINI_API_KEY=YOUR_KEY sentinel-api
+```
+
+### Test Health Endpoint
+```bash
+curl http://localhost:8080/health
+```

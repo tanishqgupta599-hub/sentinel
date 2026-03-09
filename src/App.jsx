@@ -30,7 +30,15 @@ function App() {
   const [smsDetails, setSmsDetails] = useState(null)
   const [riskAnalysis, setRiskAnalysis] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [activeCheckpoint, setActiveCheckpoint] = useState(null)
   const systemModeRef = useRef(systemMode)
+
+  // Safety Checkpoint Constant
+  const SAFE_CHECKPOINT = {
+    name: "Nearest Safety Hub",
+    latitude: 25.2048,
+    longitude: 55.2708
+  };
 
   // Layer 4 & 5 Persistence
   const sirenContextRef = useRef(null)
@@ -201,6 +209,7 @@ function App() {
   const lastProactiveAlertRef = useRef(0)
   const mapRef = useRef(null)
   const googleMapInstance = useRef(null)
+  const navStartedOnLockdownRef = useRef(false)
 
   // Professional Anti-Spam Voice Layer
   const speak = (text) => {
@@ -283,7 +292,29 @@ function App() {
       setRiskAnalysis(analysis);
 
       // 4. Frontend logic based on risk level
-      const { risk_level, spoken_response, recommendations } = analysis;
+      let { risk_level, spoken_response, recommendations } = analysis;
+
+      // DETERMINISTIC ESCALATION LOGIC
+      const discomfortKeywords = ["uncomfortable", "unsafe", "scared", "not safe"];
+      const userExpressedDiscomfort = discomfortKeywords.some(k => userText.toLowerCase().includes(k));
+      
+      const shouldTriggerCheckpoint = risk_level >= 7 || userExpressedDiscomfort;
+
+      if (shouldTriggerCheckpoint) {
+        // COMBINE original AI analysis with the route setup message
+        spoken_response = `${spoken_response} Your safety risk is elevated. I am setting up navigation to the nearest safety checkpoint.`;
+        setActiveCheckpoint(SAFE_CHECKPOINT);
+        
+        setLogs(prev => [...prev, { 
+          type: 'SYSTEM', 
+          message: `🚨 SAFETY CHECKPOINT TRIGGERED: ${SAFE_CHECKPOINT.name}` 
+        }]);
+
+        // AUTOMATIC IN-APP NAVIGATION START (Instant using pre-fetched location)
+        handleSafeRouteTrigger(true, SAFE_CHECKPOINT, location);
+      } else {
+        setActiveCheckpoint(null);
+      }
       
       // Update system mode based on risk
       let newMode = 'SAFE';
@@ -292,7 +323,7 @@ function App() {
       
       transitionTo(newMode);
 
-      // Speak guardian response
+      // Speak guardian response (original or overridden)
       speak(spoken_response);
       setLogs(prev => [...prev, { 
         type: 'ASSISTANT', 
@@ -338,8 +369,8 @@ function App() {
   }, [cameraBrightness, systemMode, isLiveGuardianActive, safeRoute])
   */
 
-  const handleSafeRouteTrigger = async (userRequested = false) => {
-    if (!navigator.geolocation) {
+  const handleSafeRouteTrigger = async (userRequested = false, customDestination = null, preFetchedCoords = null) => {
+    if (!navigator.geolocation && !preFetchedCoords) {
       setLogs(prev => [...prev, { type: 'SYSTEM', message: 'Geolocation is not supported by your browser.' }]);
       return
     }
@@ -347,41 +378,50 @@ function App() {
     setLogs(prev => [...prev, { type: 'SYSTEM', message: 'Locating user for safe route...' }]);
     setIsRequestingRoute(true)
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const { latitude, longitude } = position.coords
-          console.log('User location found:', latitude, longitude);
-          
-          const routeData = await getSafeRoute(latitude, longitude)
-          console.log('Route data received:', routeData);
-          
-          setSafeRoute({
-            ...routeData,
-            user_coords: { lat: latitude, lng: longitude }
-          })
-          setIsLiveGuardianActive(true)
-          
-          if (routeData.reasoning?.response_text) {
-            setLogs(prev => [...prev, {
-              type: 'ASSISTANT',
-              message: routeData.reasoning.response_text
-            }])
-          }
-        } catch (error) {
-          console.error('Route trigger failed:', error)
-          setLogs(prev => [...prev, { type: 'SYSTEM', message: `Route error: ${error.message}` }]);
-        } finally {
-          setIsRequestingRoute(false)
+    const startRouting = async (lat, lng) => {
+      try {
+        console.log('Routing from:', lat, lng);
+        const routeData = await getSafeRoute(lat, lng, customDestination)
+        console.log('Route data received:', routeData);
+        
+        setSafeRoute({
+          ...routeData,
+          user_coords: { lat, lng }
+        })
+        setIsLiveGuardianActive(true)
+        
+        if (routeData.reasoning?.response_text) {
+          setLogs(prev => [...prev, {
+            type: 'ASSISTANT',
+            message: routeData.reasoning.response_text
+          }])
         }
-      },
-      (error) => {
-        console.error('Geolocation error:', error);
-        setIsRequestingRoute(false);
-        setLogs(prev => [...prev, { type: 'SYSTEM', message: `Location access denied: ${error.message}. Please enable location permissions.` }]);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    )
+      } catch (error) {
+        console.error('Route trigger failed:', error)
+        setLogs(prev => [...prev, { type: 'SYSTEM', message: `Route error: ${error.message}` }]);
+      } finally {
+        setIsRequestingRoute(false)
+      }
+    }
+
+    if (preFetchedCoords && preFetchedCoords.latitude && preFetchedCoords.longitude) {
+      // Instant routing if we already have coordinates
+      await startRouting(preFetchedCoords.latitude, preFetchedCoords.longitude);
+    } else {
+      // Fallback to fetching geolocation
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords
+          await startRouting(latitude, longitude);
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          setIsRequestingRoute(false);
+          setLogs(prev => [...prev, { type: 'SYSTEM', message: `Location access denied: ${error.message}. Please enable location permissions.` }]);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      )
+    }
   }
 
   // Google Maps Initializer
@@ -511,6 +551,23 @@ function App() {
     return () => clearTimeout(startId)
   }, [systemMode])
 
+  // Ensure in-app navigation starts automatically on emergency (LOCKDOWN)
+  useEffect(() => {
+    if (systemMode === 'LOCKDOWN') {
+      if (navStartedOnLockdownRef.current) return
+      navStartedOnLockdownRef.current = true
+      // Show checkpoint panel and kick off routing below the camera
+      setActiveCheckpoint(SAFE_CHECKPOINT)
+      const coords = emergencyLocation
+        ? { latitude: emergencyLocation.lat, longitude: emergencyLocation.lng }
+        : null
+      handleSafeRouteTrigger(true, SAFE_CHECKPOINT, coords)
+    } else {
+      // Reset guard when leaving lockdown so it can trigger next time
+      navStartedOnLockdownRef.current = false
+    }
+  }, [systemMode, emergencyLocation])
+
   const handleCameraSample = (brightness) => {
     // Continuous monitoring logic removed for event-based architecture.
   }
@@ -607,40 +664,30 @@ function App() {
               responseActive={responseActive}
               setCaptureFrame={setCaptureFrame}
             />
-            {safeRoute && (
-              <div className="safe-route-panel">
-                <div className="safe-route-header">
-                  <span className="safe-route-title">Safer Route Identified</span>
-                  <button 
-                    className="safe-route-close" 
-                    onClick={() => {
-                      setSafeRoute(null);
-                      setIsLiveGuardianActive(false);
-                      googleMapInstance.current = null;
-                    }}
-                  >
-                    ×
-                  </button>
+
+            {/* MAP ONLY: persistent area directly under the camera (no buttons here) */}
+            <div className="persistent-map-area">
+              {!safeRoute && isRequestingRoute && (
+                <div className="integrated-map-skeleton">
+                  <div className="srp-spinner"></div>
+                  <span>Initializing Secure Route...</span>
                 </div>
-                <div id="safeRouteMap" ref={mapRef}></div>
-                <div className="safe-route-info">
-                  <div className="safe-route-dest">{safeRoute.destination}</div>
-                  <div className="safe-route-eta">ETA: {safeRoute.duration_text}</div>
+              )}
+              {!safeRoute && !isRequestingRoute && (
+                <div className="integrated-map-skeleton">
+                  <span>Navigation will appear here when activated.</span>
                 </div>
-              </div>
-            )}
-            {isLiveGuardianActive && !safeRoute && isRequestingRoute && (
-              <div className="live-guardian-status">
-                <span className="live-guardian-pulse" />
-                Live Guardian Active: Searching for safe route...
-              </div>
-            )}
-            {isLiveGuardianActive && safeRoute && (
-              <div className="live-guardian-status active">
-                <span className="live-guardian-pulse" />
-                Live Guardian Active: Monitoring Surroundings
-              </div>
-            )}
+              )}
+              {safeRoute && (
+                <div className="integrated-map-container">
+                  <div id="safeRouteMap" ref={mapRef}></div>
+                  <div className="safe-route-info">
+                    <div className="safe-route-dest">{safeRoute.destination}</div>
+                    <div className="safe-route-eta">ETA: {safeRoute.duration_text}</div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="layout-center">
             <div className="center-stack">
@@ -710,6 +757,50 @@ function App() {
                 Send
               </button>
             </form>
+
+            {/* RIGHT COLUMN: Safety Checkpoint + Map placed directly below chat input */}
+            {(activeCheckpoint || safeRoute) && (
+              <div className="right-safety-stack">
+                {activeCheckpoint && (
+                  <div className="safety-checkpoint-navigation">
+                    <div className="checkpoint-header">
+                      <span className="checkpoint-badge">SAFETY CHECKPOINT</span>
+                      <span className="checkpoint-name">{activeCheckpoint.name}</span>
+                    </div>
+                    <div className="checkpoint-actions">
+                      <button 
+                        className={`checkpoint-status-btn ${safeRoute ? 'active' : ''}`}
+                        onClick={() => {
+                          const coords = emergencyLocation
+                            ? { latitude: emergencyLocation.lat, longitude: emergencyLocation.lng }
+                            : null
+                          handleSafeRouteTrigger(true, SAFE_CHECKPOINT, coords)
+                        }}
+                        disabled={isRequestingRoute}
+                      >
+                        {isRequestingRoute
+                          ? 'CONNECTING…'
+                          : safeRoute
+                            ? 'IN-APP NAVIGATION ACTIVE'
+                            : 'START IN-APP NAV'}
+                      </button>
+                      <button
+                        className="checkpoint-dismiss-btn"
+                        onClick={() => {
+                          setActiveCheckpoint(null);
+                          setSafeRoute(null);
+                          setIsLiveGuardianActive(false);
+                        }}
+                      >
+                        CLOSE MAP
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Map is rendered under the camera on the left only */}
+              </div>
+            )}
           </div>
         </div>
       </div>

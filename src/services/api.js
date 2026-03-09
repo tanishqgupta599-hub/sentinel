@@ -1,6 +1,8 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+
 export async function testSentinel() {
   try {
-    const response = await fetch('http://localhost:5000/test')
+    const response = await fetch(`${API_BASE_URL}/test`)
     if (!response.ok) {
       throw new Error('Request failed')
     }
@@ -12,7 +14,7 @@ export async function testSentinel() {
 }
 
 export async function streamSentinel(sensorData, prompt) {
-  const response = await fetch('http://localhost:5000/stream', {
+  const response = await fetch(`${API_BASE_URL}/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -45,7 +47,7 @@ export async function streamSentinel(sensorData, prompt) {
 }
 
 export async function evaluateRiskAgent(input) {
-  const response = await fetch('http://localhost:5000/evaluate-risk', {
+  const response = await fetch(`${API_BASE_URL}/evaluate-risk`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -80,7 +82,7 @@ export async function evaluateRiskAgent(input) {
 }
 
 export async function triggerManualAlert(location) {
-  const res = await fetch('http://localhost:5000/manual-alert', {
+  const res = await fetch(`${API_BASE_URL}/manual-alert`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(location || {}),
@@ -112,7 +114,7 @@ export async function sendAudioToBackend(base64Audio, frame, soundLevel) {
     soundLevel: payload.soundLevel,
   })
 
-  const res = await fetch('http://localhost:5000/voice-input', {
+  const res = await fetch(`${API_BASE_URL}/voice-input`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -127,7 +129,7 @@ export async function sendAudioToBackend(base64Audio, frame, soundLevel) {
 }
 
 export async function analyzeSafety(payload) {
-  const res = await fetch('http://localhost:5000/analyze-safety', {
+  const res = await fetch(`${API_BASE_URL}/analyze-safety`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -144,11 +146,15 @@ export async function analyzeSafety(payload) {
   return res.json()
 }
 
-export async function getSafeRoute(latitude, longitude) {
-  const res = await fetch('http://localhost:5000/get-safe-route', {
+export async function getSafeRoute(latitude, longitude, customDestination = null) {
+  const res = await fetch(`${API_BASE_URL}/get-safe-route`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ latitude, longitude }),
+    body: JSON.stringify({
+      latitude,
+      longitude,
+      customDestination // Pass through to backend
+    }),
   })
 
   if (!res.ok) {
@@ -160,7 +166,7 @@ export async function getSafeRoute(latitude, longitude) {
 }
 
 export async function fetchGuardianState() {
-  const response = await fetch('http://localhost:5000/guardian-state')
+  const response = await fetch(`${API_BASE_URL}/guardian-state`)
   if (!response.ok) {
     throw new Error('Request failed')
   }
