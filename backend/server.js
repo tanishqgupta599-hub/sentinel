@@ -75,30 +75,36 @@ async function callGemini(parts, retryCount = 2) {
  * Triggered by safety-related user intent (voice or chat)
  */
 app.post("/analyze-safety", async (req, res) => {
-  const { user_text, image_frame_base64, latitude, longitude, timestamp } = req.body;
+  let { user_text, image_frame_base64, latitude, longitude, timestamp } = req.body;
 
   if (!user_text) {
     return res.status(400).json({ error: "User query is required for analysis." });
   }
 
+  // SECONDARY FIX: Ensure any accidentally passed prefix is stripped on the backend too
+  if (image_frame_base64 && image_frame_base64.startsWith("data:image")) {
+    image_frame_base64 = image_frame_base64.replace(/^data:image\/[a-z]+;base64,/, "");
+  }
+
   const prompt = `
 You are an AI Safety Guardian analyzing a real-world environment. 
-User Query: 
-${user_text} 
+
+CRITICAL INSTRUCTIONS:
+1. VISUAL PRIORITY: You MUST prioritize the provided image over the user's text. If the user asks if they are safe but the image is pitch black, they are NOT safe because you cannot see the surroundings.
+2. GROUNDING: Describe exactly what you see in the image (lighting, people, environment) before making an assessment.
+3. DARKNESS PROTOCOL: If the image is dark, blurry, or obscured, you MUST report high risk due to lack of visibility. Do NOT hallucinate people or lighting that isn't there.
+
+User Query: ${user_text} 
 
 Environment Data: 
 Latitude: ${latitude || "Unknown"} 
 Longitude: ${longitude || "Unknown"} 
 Timestamp: ${timestamp || new Date().toISOString()} 
 
-Instructions: 
-Analyze lighting conditions from the image if provided. 
-Detect presence of people. 
-Detect signs of aggression or threat. 
-Detect isolation level (crowded vs empty). 
-Infer risk level from 0 to 10. 
-If lighting is poor, suggest moving to a brighter area. 
-If isolation risk is high, suggest moving to a populated area. 
+Instructions for response: 
+- Infer risk level from 0 to 10. 
+- If lighting is poor, suggest moving to a brighter area. 
+- If isolation risk is high, suggest moving to a populated area. 
 
 After analysis, respond in valid JSON format only. 
 
@@ -106,117 +112,47 @@ IMPORTANT:
 Do NOT use markdown. 
 Do NOT use backticks. 
 Do NOT add explanations before or after JSON. 
-Do NOT include comments. 
-Ensure "confidence" is a decimal number between 0 and 1 (example: 0.82). 
+Ensure "confidence" is a decimal number between 0 and 1. 
 Ensure "risk_level" is an integer between 0 and 10. 
-Ensure all keys are enclosed in double quotes. 
-Ensure JSON is syntactically valid. 
 
 Return JSON in this exact format: 
 { 
   "risk_level": number, 
   "confidence": number, 
-  "spoken_response": "short 1–2 sentence guardian-style response including 'I recommend...'", 
+  "spoken_response": "Describe what you see first, then give recommendations.", 
   "recommendations": ["string", "string"], 
   "should_alert_emergency": true/false 
 } 
-
-Do not include any additional text outside the JSON object.
 `;
 
-  const parts = [{ text: prompt }];
-
-  if (image_frame_base64 && image_frame_base64 !== "no-image") {
-    // Requirements: inlineData format, mimeType image/jpeg, data is base64 without prefix
-    parts.push({
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: image_frame_base64,
-      },
-    });
-  }
-
-  try {
-    const rawText = await callGemini(parts);
-    console.log("[ANALYSIS] Raw model output:", rawText);
-
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("[ANALYSIS] No JSON found in response:", rawText);
-      return res.status(500).json({ 
-        error: true,
-        message: "AI response formatting error. Please retry." 
-      });
-    }
-
-    let parsed;
+    // 3. Request analysis from Gemini
     try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error("[ANALYSIS] JSON parse failed:", e, "Raw output:", rawText);
-      return res.status(500).json({ 
-        error: true,
-        message: "AI response formatting error. Please retry." 
-      });
-    }
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            data: image_frame_base64,
+            mimeType: "image/jpeg",
+          },
+        },
+      ]);
 
-    // STEP 3: Strict Field Validation
-    const requiredFields = ["risk_level", "confidence", "spoken_response", "recommendations", "should_alert_emergency"];
-    const missingFields = requiredFields.filter(field => !(field in parsed));
-    
-    if (missingFields.length > 0) {
-      console.error("[ANALYSIS] Missing fields in AI response:", missingFields);
-      return res.status(500).json({ 
-        error: true,
-        message: `AI analysis response was incomplete. Missing: ${missingFields.join(', ')}` 
-      });
-    }
+      const response = await result.response;
+      const text = response.text().trim();
+      
+      console.log("[GEMINI] raw response:", text);
 
-    // Type and Range Validation
-    if (typeof parsed.risk_level !== 'number' || parsed.risk_level < 0 || parsed.risk_level > 10) {
-      console.error("[ANALYSIS] Invalid risk_level:", parsed.risk_level);
-      return res.status(500).json({ error: true, message: "AI generated an invalid risk assessment. Please try again." });
-    }
-
-    if (typeof parsed.confidence !== 'number' || parsed.confidence < 0 || parsed.confidence > 1) {
-      console.error("[ANALYSIS] Invalid confidence score:", parsed.confidence);
-      return res.status(500).json({ error: true, message: "AI confidence score out of range. Please try again." });
-    }
-
-    if (!Array.isArray(parsed.recommendations)) {
-      console.error("[ANALYSIS] recommendations is not an array");
-      return res.status(500).json({ error: true, message: "AI recommendations format is invalid. Please try again." });
-    }
-
-    return res.json(parsed);
-  } catch (error) {
-    console.error("[ANALYSIS] Final failure:", error.message);
-    
-    // HACKATHON DEMO FALLBACK: If AI truly fails, return a realistic safety response 
-    // instead of a generic error. This ensures the demo is "unbreakable".
-    const demoFallbacks = [
-      {
-        risk_level: 2,
-        confidence: 0.85,
-        spoken_response: "Lighting conditions are stable and the area appears populated. I recommend maintaining your current route while I continue to monitor.",
-        recommendations: ["Stay in well-lit areas", "Keep your phone accessible"],
-        should_alert_emergency: false
-      },
-      {
-        risk_level: 5,
-        confidence: 0.78,
-        spoken_response: "I've detected low lighting in your immediate vicinity. I recommend moving toward the nearest main road to improve visibility.",
-        recommendations: ["Increase walking pace", "Move toward streetlights"],
-        should_alert_emergency: false
+      try {
+        const analysis = JSON.parse(text);
+        return res.json(analysis);
+      } catch (parseError) {
+        console.error("[GEMINI] Parse error:", parseError);
+        return res.status(500).json({ error: "Failed to parse safety analysis JSON." });
       }
-    ];
-
-    // Pick a random realistic fallback for the demo
-    const fallback = demoFallbacks[Math.floor(Math.random() * demoFallbacks.length)];
-    
-    console.log("[ANALYSIS] Triggering Realistic Demo Fallback due to API failure.");
-    return res.json(fallback);
-  }
+    } catch (error) {
+      console.error("[GEMINI] API error:", error);
+      return res.status(500).json({ error: "AI Safety Analysis failed. Please try again." });
+    }
 });
 
 /**

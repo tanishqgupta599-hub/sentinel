@@ -257,7 +257,10 @@ function App() {
       if (captureFrame) {
         try {
           const frame = await captureFrame();
-          image_frame_base64 = frame.image_frame_base64;
+          if (frame && frame.image_frame_base64) {
+            // CRITICAL FIX: Strip the prefix (data:image/jpeg;base64,) so Gemini gets raw base64
+            image_frame_base64 = frame.image_frame_base64.replace(/^data:image\/[a-z]+;base64,/, "");
+          }
         } catch (e) {
           console.error("Frame capture failed:", e);
         }
