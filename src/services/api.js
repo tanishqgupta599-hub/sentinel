@@ -129,6 +129,7 @@ export async function sendAudioToBackend(base64Audio, frame, soundLevel) {
 }
 
 export async function analyzeSafety(payload) {
+  console.log(`[DEBUG] analyzeSafety hitting: ${API_BASE_URL}/analyze-safety`);
   const res = await fetch(`${API_BASE_URL}/analyze-safety`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

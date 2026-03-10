@@ -296,6 +296,13 @@ function App() {
         timestamp: new Date().toISOString()
       };
 
+      console.log("[DEBUG] Payload being sent to backend:", {
+        text: payload.user_text,
+        imageSize: payload.image_frame_base64.length,
+        imagePreview: payload.image_frame_base64.substring(0, 50) + "...",
+        hasLocation: !!(payload.latitude && payload.longitude)
+      });
+
       const analysis = await analyzeSafety(payload);
       setRiskAnalysis(analysis);
 
