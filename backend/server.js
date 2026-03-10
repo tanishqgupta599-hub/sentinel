@@ -15,22 +15,31 @@ if (!GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// Function to list available models for debugging
-async function listModels() {
+/**
+ * DEBUG ENDPOINT: Use this to check model availability and API key health
+ */
+app.get("/debug-api", async (req, res) => {
   try {
     const models = await genAI.listModels();
-    console.log("--------------------------------------------------");
-    console.log("AVAILABLE MODELS FOR THIS KEY:");
-    models.models.forEach(m => console.log(`- ${m.name}`));
-    console.log("--------------------------------------------------");
-  } catch (e) {
-    console.error("Could not list models:", e.message);
+    const modelNames = models.models.map(m => m.name);
+    res.json({
+      status: "success",
+      apiKeyLength: GEMINI_API_KEY.length,
+      availableModels: modelNames,
+      suggestedModel: "models/gemini-1.5-flash",
+      message: "If you see a list of models, your API key is working correctly."
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: error.message,
+      tip: "If this says 403, your key is invalid. If 404, the listModels endpoint is blocked."
+    });
   }
-}
-listModels();
+});
 
-// FIX: Use a more flexible model selector
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// FIX: Use explicit v1 version to avoid v1beta 404s
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: 'v1' });
 
 const app = express();
 app.use(cors());
