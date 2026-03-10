@@ -95,24 +95,24 @@ app.post("/analyze-safety", async (req, res) => {
 
   // Define a strong, grounding prompt
   const prompt = `
-You are an AI Safety Guardian. You are provided with a USER QUERY and a REAL-TIME IMAGE from their camera.
-
-CRITICAL RULES:
-1. TRUTH OVER TEXT: If the USER asks "Am I safe?" but the IMAGE is pitch black or completely dark, you MUST say they are NOT safe because you cannot see anything. 
-2. VISUAL DESCRIPTION: Start your spoken response by describing EXACTLY what you see. If it's dark, say "It is too dark for me to see your surroundings."
-3. NO HALLUCINATION: Do not mention people, lights, or streets if the image is dark.
-4. RISK ASSESSMENT: If visibility is zero (black image), the risk_level MUST be at least 8.
+SYSTEM INSTRUCTION: You are an AI Safety Guardian. You MUST prioritize visual data from the camera above all else.
 
 USER QUERY: ${user_text}
 ENVIRONMENT DATA: Lat:${latitude || "N/A"}, Lng:${longitude || "N/A"}
 
+CRITICAL ANALYSIS RULES:
+1. If the image is DARK or OBSCURED, you MUST report high risk.
+2. DO NOT assume safety if you cannot see.
+3. Your spoken_response MUST start with a visual description of what you see in the image.
+4. If the lens is covered (black image), say: "I cannot see your surroundings as it is pitch black. This is a high-risk situation."
+
 RESPONSE FORMAT: Valid JSON only.
 {
-  "risk_level": (0-10),
-  "confidence": (0.0-1.0),
-  "spoken_response": "What you see + recommendations",
+  "risk_level": (number 0-10),
+  "confidence": (number 0.0-1.0),
+  "spoken_response": "MUST START WITH 'I see...' OR 'It is too dark to see...' followed by safety analysis.",
   "recommendations": ["step 1", "step 2"],
-  "should_alert_emergency": (true/false)
+  "should_alert_emergency": (boolean)
 }
 `;
 
@@ -127,13 +127,14 @@ RESPONSE FORMAT: Valid JSON only.
           mimeType: "image/jpeg",
         },
       });
-      console.log(`[GEMINI] Sending analysis request with image (${image_frame_base64.length} chars)`);
+      console.log(`[GEMINI] Sending request with image (${image_frame_base64.length} chars). Preview: ${image_frame_base64.substring(0, 30)}...`);
     } else {
       console.log("[GEMINI] Sending text-only analysis (image missing or invalid)");
       // If image is missing, add a note to the prompt
       parts[0] += "\n\nNOTE: No camera image was provided. Inform the user you cannot see their surroundings.";
     }
 
+    console.log("[GEMINI] Final Prompt Context:", parts[0].substring(0, 200) + "...");
     const result = await model.generateContent(parts);
     const response = await result.response;
     const text = response.text().replace(/```json|```/g, "").trim();
@@ -211,11 +212,18 @@ app.post("/get-safe-route", async (req, res) => {
  * Health check endpoint for Cloud Run
  */
 app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({ 
+    status: "ok", 
+    version: "1.6.0-STRICT-VISUAL",
+    model: "gemini-1.5-flash"
+  });
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
+  console.log("--------------------------------------------------");
+  console.log("BACKEND VERSION: 1.6.0 - STRICT VISUAL ENABLED");
   console.log("Backend on Google Cloud Run - Gemini Live Agent Challenge");
   console.log(`Hackathon-Ready Server running on port ${PORT}`);
+  console.log("--------------------------------------------------");
 });
