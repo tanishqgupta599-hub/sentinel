@@ -70,3 +70,12 @@ docker run -p 8080:8080 -e GEMINI_API_KEY=YOUR_KEY sentinel-api
 ```bash
 curl http://localhost:8080/health
 ```
+
+## Stable Checkpoint
+
+* **Tag name**: sentinel-stable-v1
+* **Purpose**: Restore the project if future experiments break the system
+* **Command to restore this version**:
+  ```bash
+  git checkout sentinel-stable-v1
+  ```
