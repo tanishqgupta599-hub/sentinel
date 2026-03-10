@@ -14,6 +14,14 @@ if (!GEMINI_API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const app = express();
+
+// FIX: Use explicit v1 version to avoid v1beta 404s
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: 'v1' });
+
+app.use(cors());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 /**
  * DEBUG ENDPOINT: Use this to check model availability and API key health
@@ -37,14 +45,6 @@ app.get("/debug-api", async (req, res) => {
     });
   }
 });
-
-// FIX: Use explicit v1 version to avoid v1beta 404s
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: 'v1' });
-
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 /**
  * Helper to call Gemini with retry logic, fallback, and 15s timeout
