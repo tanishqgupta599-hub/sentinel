@@ -7,251 +7,123 @@ dotenv.config();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// CRITICAL: Add a check to ensure the API key is loaded.
 if (!GEMINI_API_KEY) {
-  console.error("FATAL ERROR: GEMINI_API_KEY is not defined. Please set it in your .env file or deployment environment.");
+  console.error("FATAL ERROR: GEMINI_API_KEY is not defined.");
   process.exit(1); 
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const app = express();
 
-// FIX: Use explicit v1 version to avoid v1beta 404s
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: 'v1' });
-
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Initialize the model. Defaulting back to the most common configuration.
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
 /**
- * DEBUG ENDPOINT: Use this to check model availability and API key health
+ * DEBUG ENDPOINT: Tests Gemini connectivity with a simple prompt
  */
 app.get("/debug-api", async (req, res) => {
   try {
-    const models = await genAI.listModels();
-    const modelNames = models.models.map(m => m.name);
+    const result = await model.generateContent("Hello, say 'API IS WORKING'");
+    const response = await result.response;
+    const text = response.text();
     res.json({
       status: "success",
-      apiKeyLength: GEMINI_API_KEY.length,
-      availableModels: modelNames,
-      suggestedModel: "models/gemini-1.5-flash",
-      message: "If you see a list of models, your API key is working correctly."
+      geminiResponse: text,
+      message: "If you see 'API IS WORKING', the backend is fully functional."
     });
   } catch (error) {
     res.status(500).json({
       status: "error",
       message: error.message,
-      tip: "If this says 403, your key is invalid. If 404, the listModels endpoint is blocked."
+      tip: "If this says 403, check your API key in Render settings."
     });
   }
 });
 
 /**
- * Helper to call Gemini with retry logic, fallback, and 15s timeout
- * @param {Array} parts - Parts to send to Gemini (strictly formatted)
- * @param {number} retryCount - Number of retries remaining
- */
-async function callGemini(parts, retryCount = 2) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts }]
-    }, { signal: controller.signal });
-    
-    clearTimeout(timeoutId);
-
-    if (!result || !result.response) {
-      throw new Error("Invalid response from Gemini");
-    }
-    
-    // Check candidates first for robust parsing
-    const text = result.response.candidates?.[0]?.content?.parts?.[0]?.text || result.response.text();
-    if (!text) {
-        throw new Error("Empty text returned from model");
-    }
-    
-    return text;
-  } catch (error) {
-    const isQuotaError = error.message.includes("429") || error.message.includes("Quota exceeded");
-    const isServiceError = error.message.includes("503") || error.message.includes("Service Unavailable");
-    const isTimeout = error.name === 'AbortError';
-    
-    console.error(`\n[GEMINI ERROR LOG]`);
-    console.error(`Timestamp: ${new Date().toISOString()}`);
-    console.error(`Message: ${error.message}`);
-    console.error(`Details:`, error.response ? JSON.stringify(error.response, null, 2) : "No extra response data");
-    console.error(`Retry Count: ${retryCount}\n`);
-    
-    if (retryCount > 0 && !isQuotaError) {
-      const delay = isServiceError ? 3000 : 1500;
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return callGemini(parts, retryCount - 1);
-    }
-    
-    if (isQuotaError) {
-        throw new Error("API Rate Limit reached. Please wait a moment.");
-    }
-    if (isTimeout) {
-        throw new Error("Gemini API request timed out after 15 seconds.");
-    }
-    
-    throw error;
-  }
-}
-
-/**
  * Endpoint for Event-Based Safety Analysis
- * Triggered by safety-related user intent (voice or chat)
  */
 app.post("/analyze-safety", async (req, res) => {
   let { user_text, image_frame_base64, latitude, longitude, timestamp } = req.body;
 
   if (!user_text) {
-    return res.status(400).json({ error: "User query is required for analysis." });
+    return res.status(400).json({ error: "User query is required." });
   }
 
-  // Strip prefix if present
+  // Strip prefix
   if (image_frame_base64 && image_frame_base64.startsWith("data:image")) {
     image_frame_base64 = image_frame_base64.replace(/^data:image\/[a-z]+;base64,/, "");
   }
 
-  // Define a strong, grounding prompt
   const prompt = `
-SYSTEM INSTRUCTION: You are an AI Safety Guardian. You MUST prioritize visual data from the camera above all else.
-
+SYSTEM INSTRUCTION: You are an AI Safety Guardian.
 USER QUERY: ${user_text}
 ENVIRONMENT DATA: Lat:${latitude || "N/A"}, Lng:${longitude || "N/A"}
 
-CRITICAL ANALYSIS RULES:
-1. If the image is DARK or OBSCURED, you MUST report high risk.
-2. DO NOT assume safety if you cannot see.
-3. Your spoken_response MUST start with a visual description of what you see in the image.
-4. If the lens is covered (black image), say: "I cannot see your surroundings as it is pitch black. This is a high-risk situation."
+RULES:
+1. If the image is DARK or OBSCURED, report high risk.
+2. Your spoken_response MUST start with a visual description.
+3. If it's black, say: "I cannot see your surroundings. It is pitch black. This is a high-risk situation."
 
-RESPONSE FORMAT: Valid JSON only.
+FORMAT: JSON only.
 {
-  "risk_level": (number 0-10),
-  "confidence": (number 0.0-1.0),
-  "spoken_response": "MUST START WITH 'I see...' OR 'It is too dark to see...' followed by safety analysis.",
+  "risk_level": number,
+  "confidence": number,
+  "spoken_response": "visual description + advice",
   "recommendations": ["step 1", "step 2"],
-  "should_alert_emergency": (boolean)
+  "should_alert_emergency": boolean
 }
 `;
 
   try {
     const parts = [{ text: prompt }];
     
-    // Only include image if it's a valid non-placeholder string
     if (image_frame_base64 && image_frame_base64 !== "no-image" && image_frame_base64.length > 100) {
       parts.push({
-        inlineData: {
-          data: image_frame_base64,
-          mimeType: "image/jpeg",
-        },
+        inlineData: { data: image_frame_base64, mimeType: "image/jpeg" }
       });
-      console.log(`[GEMINI] Sending request with image (${image_frame_base64.length} chars).`);
     } else {
-      console.log("[GEMINI] Sending text-only analysis (image missing or invalid)");
-      // If image is missing, add a note to the prompt
-      parts[0].text += "\n\nNOTE: No camera image was provided. Inform the user you cannot see their surroundings.";
+      parts[0].text += "\n\nNOTE: No image provided. Tell user you cannot see.";
     }
 
-    console.log("[GEMINI] Final Prompt Context:", parts[0].text.substring(0, 200) + "...");
     const result = await model.generateContent(parts);
     const response = await result.response;
     const text = response.text().replace(/```json|```/g, "").trim();
     
-    console.log("[GEMINI] response:", text);
-
     try {
       const analysis = JSON.parse(text);
       return res.json(analysis);
-    } catch (parseError) {
-      console.error("[GEMINI] Parse error:", text);
-      return res.status(500).json({ error: "Invalid AI response format." });
+    } catch (e) {
+      console.error("Parse error:", text);
+      return res.status(500).json({ error: "Invalid response format from AI." });
     }
   } catch (error) {
-    console.error("[GEMINI] CRITICAL API ERROR:", error.message);
-    // DEBUG: Send the EXACT error message to the frontend for diagnosis
-    return res.status(500).json({ 
-      error: `Gemini API Error: ${error.message}`,
-      tip: "If this mentions 403, your API key is invalid. If 404, the model name is wrong."
-    });
+    console.error("API ERROR:", error.message);
+    return res.status(500).json({ error: `AI Analysis failed: ${error.message}` });
   }
 });
 
-/**
- * Basic voice-to-text simulation/relay endpoint 
- * (In a real hackathon, this might use Whisper or Google Speech-to-Text)
- * For now, it assumes the frontend sends the transcribed text.
- */
-app.post("/voice-input", async (req, res) => {
-  // Logic moved to /analyze-safety to follow the event-based requirement
-  // This endpoint can remain for general non-safety queries if needed, 
-  // but for the "AI Guardian" refactor, we focus on /analyze-safety.
-  res.status(404).json({ error: "Use /analyze-safety for guardian queries." });
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", version: "1.7.0-STABLE" });
 });
 
 app.post("/get-safe-route", async (req, res) => {
-  const { latitude, longitude, customDestination } = req.body;
-
-  // Logging incoming request for debugging
-  console.log("[ROUTE] Request received:", { latitude, longitude, customDestination });
-
-  if (latitude === undefined || longitude === undefined || latitude === null || longitude === null) {
-    console.error("[ROUTE] Missing coordinates");
-    return res.status(400).json({ error: "Location data required (latitude and longitude)." });
-  }
-
-  try {
-    // Resolve destination from custom input or fallback
-    const destName = customDestination?.name || "Safe Hub - Nearest Security Center";
-    const destLat = customDestination?.latitude || customDestination?.lat || 25.2048;
-    const destLng = customDestination?.longitude || customDestination?.lng || 55.2708;
-
-    console.log(`[ROUTE] Target: ${destName} at ${destLat}, ${destLng}`);
-
-    /**
-     * HACKATHON STABILITY LAYER: 
-     * We provide a valid static polyline if external Directions API fails or isn't called.
-     * This ensures the map always renders a path during the demo.
-     */
-    const mockPolyline = "a~l~FjkkwGzh@v_@|v@|u@"; // Valid encoded polyline
-    
-    return res.json({
-      destination: destName,
-      destination_coords: { lat: parseFloat(destLat), lng: parseFloat(destLng) },
-      duration_text: "4 mins",
-      distance_text: "1.2 km",
-      polyline: mockPolyline,
-      reasoning: {
-        response_text: `I have identified ${destName} as your nearest safety checkpoint. Navigation is now active.`
-      }
-    });
-  } catch (error) {
-    console.error("[ROUTE] Critical failure:", error.message);
-    return res.status(500).json({ error: "Safe route generation failed internally." });
-  }
-});
-
-/**
- * Health check endpoint for Cloud Run
- */
-app.get("/health", (req, res) => {
-  res.json({ 
-    status: "ok", 
-    version: "1.6.0-STRICT-VISUAL",
-    model: "gemini-1.5-flash"
+  const { latitude, longitude } = req.body;
+  return res.json({
+    destination: "Nearest Security Center",
+    destination_coords: { lat: 25.2048, lng: 55.2708 },
+    duration_text: "4 mins",
+    distance_text: "1.2 km",
+    polyline: "a~l~FjkkwGzh@v_@|v@|u@",
+    reasoning: { response_text: "Navigation to safety hub active." }
   });
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log("--------------------------------------------------");
-  console.log("BACKEND VERSION: 1.6.0 - STRICT VISUAL ENABLED");
-  console.log("Backend on Google Cloud Run - Gemini Live Agent Challenge");
-  console.log(`Hackathon-Ready Server running on port ${PORT}`);
-  console.log("--------------------------------------------------");
+  console.log(`Server running on port ${PORT} - Version 1.7.0`);
 });
