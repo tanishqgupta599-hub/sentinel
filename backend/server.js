@@ -132,7 +132,7 @@ RESPONSE FORMAT: Valid JSON only.
 `;
 
   try {
-    const parts = [prompt];
+    const parts = [{ text: prompt }];
     
     // Only include image if it's a valid non-placeholder string
     if (image_frame_base64 && image_frame_base64 !== "no-image" && image_frame_base64.length > 100) {
@@ -142,16 +142,17 @@ RESPONSE FORMAT: Valid JSON only.
           mimeType: "image/jpeg",
         },
       });
-      console.log(`[GEMINI] Sending request with image (${image_frame_base64.length} chars). Preview: ${image_frame_base64.substring(0, 30)}...`);
+      console.log(`[GEMINI] Sending request with image (${image_frame_base64.length} chars).`);
     } else {
       console.log("[GEMINI] Sending text-only analysis (image missing or invalid)");
       // If image is missing, add a note to the prompt
-      parts[0] += "\n\nNOTE: No camera image was provided. Inform the user you cannot see their surroundings.";
+      parts[0].text += "\n\nNOTE: No camera image was provided. Inform the user you cannot see their surroundings.";
     }
 
-    console.log("[GEMINI] Final Prompt Context:", parts[0].substring(0, 200) + "...");
-    const textRaw = await callGemini(parts);
-    const text = textRaw.replace(/```json|```/g, "").trim();
+    console.log("[GEMINI] Final Prompt Context:", parts[0].text.substring(0, 200) + "...");
+    const result = await model.generateContent(parts);
+    const response = await result.response;
+    const text = response.text().replace(/```json|```/g, "").trim();
     
     console.log("[GEMINI] response:", text);
 
