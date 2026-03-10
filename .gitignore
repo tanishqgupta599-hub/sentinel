@@ -13,7 +13,12 @@ dist-ssr
 *.local
 .env
 .env.*
+# Backend - Ignore all JSON files by default (secrets safety)
 backend/*.json
+# Explicitly allow only the necessary package files
+!backend/package.json
+!backend/package-lock.json
+
 
 # Editor directories and files
 .vscode/*

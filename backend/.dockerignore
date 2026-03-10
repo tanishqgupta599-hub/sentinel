@@ -4,8 +4,3 @@ npm-debug.log
 .env.local
 .git
 .gitignore
-Dockerfile
-.dockerignore
-*.json
-!package.json
-!package-lock.json
