@@ -19,8 +19,8 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Initialize the model. Defaulting back to the most common configuration.
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Initialize the model with explicit v1 API version to avoid v1beta 404 errors
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }, { apiVersion: 'v1' });
 
 /**
  * DEBUG ENDPOINT: Tests Gemini connectivity with a simple prompt
