@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
@@ -12,67 +11,54 @@ if (!GEMINI_API_KEY) {
   process.exit(1); 
 }
 
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const app = express();
-
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 /**
- * DEBUG ENDPOINT: Tests multiple Gemini models to find one that works
+ * Direct REST call to Gemini API
+ * Bypasses SDK to avoid 404/URL formatting issues
  */
-app.get("/debug-api", async (req, res) => {
-  const modelsToTest = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-pro"];
-  const results = {};
-
-  for (const modelName of modelsToTest) {
-    try {
-      const testModel = genAI.getGenerativeModel({ model: modelName });
-      const result = await testModel.generateContent("Say 'OK'");
-      const response = await result.response;
-      results[modelName] = { status: "success", text: response.text() };
-    } catch (error) {
-      results[modelName] = { status: "error", message: error.message };
-    }
-  }
-
-  const workingModel = Object.keys(results).find(m => results[m].status === "success");
-
-  res.json({
-    status: workingModel ? "success" : "error",
-    workingModel: workingModel || "none",
-    allResults: results,
-    tip: "Use the 'workingModel' name in your code if any succeeded."
+async function callGeminiRest(payload) {
+  const model = "gemini-1.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: payload })
   });
-});
 
-/**
- * Robust function to call Gemini with fallbacks
- */
-async function callGeminiWithFallback(parts) {
-  const models = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro"];
-  let lastError = null;
-
-  for (const modelName of models) {
-    try {
-      console.log(`[GEMINI] Attempting analysis with model: ${modelName}`);
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(parts);
-      const response = await result.response;
-      return response.text();
-    } catch (error) {
-      console.error(`[GEMINI] Model ${modelName} failed:`, error.message);
-      lastError = error;
-      if (error.message.includes("403")) throw error; // Key error, don't bother with other models
-    }
+  const data = await response.json();
+  
+  if (!response.ok) {
+    throw new Error(data.error?.message || `API Error ${response.status}`);
   }
-  throw lastError;
+
+  return data.candidates[0].content.parts[0].text;
 }
 
 /**
- * Endpoint for Event-Based Safety Analysis
+ * DEBUG ENDPOINT: Tests the direct REST connection
  */
+app.get("/debug-api", async (req, res) => {
+  try {
+    const text = await callGeminiRest([{ parts: [{ text: "Say 'REST API WORKING'" }] }]);
+    res.json({
+      status: "success",
+      geminiResponse: text,
+      message: "Direct REST connection successful!"
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: error.message,
+      tip: "If 403, your key is invalid. Check Render Environment variables."
+    });
+  }
+});
+
 app.post("/analyze-safety", async (req, res) => {
   let { user_text, image_frame_base64, latitude, longitude } = req.body;
 
@@ -83,56 +69,52 @@ app.post("/analyze-safety", async (req, res) => {
   }
 
   const prompt = `
-SYSTEM INSTRUCTION: You are an AI Safety Guardian. You MUST prioritize the camera image over any user text.
-
+SYSTEM INSTRUCTION: You are an AI Safety Guardian. YOU MUST PRIORITIZE THE IMAGE.
 USER QUERY: ${user_text}
-ENVIRONMENT DATA: Lat:${latitude || "N/A"}, Lng:${longitude || "N/A"}
+ENVIRONMENT: Lat:${latitude || "N/A"}, Lng:${longitude || "N/A"}
 
 CRITICAL RULES:
-1. TRUTH OVER TEXT: If the USER asks if they are safe but the IMAGE is dark/black, you MUST say they are NOT safe because you cannot see.
-2. VISUAL GROUNDING: Your spoken_response MUST start with a visual description of the image.
-3. DARKNESS PROTOCOL: If the image is black, say: "I cannot see your surroundings. It is pitch black. This is a high-risk situation."
-4. NO GUESSING: Do not mention streets, lights, or people if the image is dark.
+1. If the image is DARK or BLACK, you MUST say you cannot see and report HIGH RISK.
+2. Start your response with a visual description of what you see.
+3. If the lens is covered, say: "I cannot see your surroundings. It is pitch black. High-risk situation."
 
-FORMAT: JSON only.
+FORMAT: Valid JSON only.
 {
-  "risk_level": (number 0-10, use 8+ for darkness),
-  "confidence": (number 0.0-1.0),
-  "spoken_response": "visual description + recommendation",
-  "recommendations": ["step 1", "step 2"],
-  "should_alert_emergency": (boolean)
+  "risk_level": number,
+  "confidence": number,
+  "spoken_response": "visual description + advice",
+  "recommendations": ["step 1"],
+  "should_alert_emergency": boolean
 }
 `;
 
   try {
-    const parts = [{ text: prompt }];
+    const contents = [{
+      parts: [{ text: prompt }]
+    }];
+
     if (image_frame_base64 && image_frame_base64 !== "no-image" && image_frame_base64.length > 100) {
-      parts.push({ inlineData: { data: image_frame_base64, mimeType: "image/jpeg" } });
+      contents[0].parts.push({
+        inline_data: { mime_type: "image/jpeg", data: image_frame_base64 }
+      });
     }
 
-    const textRaw = await callGeminiWithFallback(parts);
+    const textRaw = await callGeminiRest(contents);
     const text = textRaw.replace(/```json|```/g, "").trim();
-    
     return res.json(JSON.parse(text));
   } catch (error) {
-    console.error("CRITICAL API ERROR:", error.message);
-    return res.status(500).json({ 
-      error: `AI Analysis failed: ${error.message}`,
-      tip: "Check /debug-api to find a working model for your account."
-    });
+    console.error("REST API ERROR:", error.message);
+    return res.status(500).json({ error: `AI Analysis failed: ${error.message}` });
   }
 });
 
-app.get("/health", (req, res) => res.json({ status: "ok", version: "1.8.0-FALLBACK-ENABLED" }));
+app.get("/health", (req, res) => res.json({ status: "ok", version: "1.9.0-REST-DIRECT" }));
 
 app.post("/get-safe-route", (req, res) => res.json({
   destination: "Nearest Security Center",
-  destination_coords: { lat: 25.2048, lng: 55.2708 },
-  duration_text: "4 mins",
-  distance_text: "1.2 km",
   polyline: "a~l~FjkkwGzh@v_@|v@|u@",
-  reasoning: { response_text: "Navigation to safety hub active." }
+  reasoning: { response_text: "Navigation active." }
 }));
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Server running on port ${PORT} - v1.8.0`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT} - v1.9.0 (REST)`));
