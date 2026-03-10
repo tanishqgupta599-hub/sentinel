@@ -14,7 +14,22 @@ if (!GEMINI_API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-// FIX: Use the most basic stable model name
+
+// Function to list available models for debugging
+async function listModels() {
+  try {
+    const models = await genAI.listModels();
+    console.log("--------------------------------------------------");
+    console.log("AVAILABLE MODELS FOR THIS KEY:");
+    models.models.forEach(m => console.log(`- ${m.name}`));
+    console.log("--------------------------------------------------");
+  } catch (e) {
+    console.error("Could not list models:", e.message);
+  }
+}
+listModels();
+
+// FIX: Use a more flexible model selector
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const app = express();
@@ -135,9 +150,8 @@ RESPONSE FORMAT: Valid JSON only.
     }
 
     console.log("[GEMINI] Final Prompt Context:", parts[0].substring(0, 200) + "...");
-    const result = await model.generateContent(parts);
-    const response = await result.response;
-    const text = response.text().replace(/```json|```/g, "").trim();
+    const textRaw = await callGemini(parts);
+    const text = textRaw.replace(/```json|```/g, "").trim();
     
     console.log("[GEMINI] response:", text);
 
