@@ -1,27 +1,25 @@
-# Use Node 20 slim image
+# Robust Dockerfile for Render Monorepo
+# This version works best when 'Root Directory' is set to 'backend' in Render.
 FROM node:20-slim
 
-# Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# This Dockerfile assumes the build context is the project ROOT.
-# This matches 'Root Directory = Blank' and 'Dockerfile Path = backend/Dockerfile'
+# If Root Directory is 'backend', these will find package.json in the current context.
+# If Root Directory is (empty), these might fail, but we'll try to be flexible.
+COPY package*.json ./
+# If the above fails in some environments, we can try: 
+# COPY backend/package*.json ./ 
+# but that's mutually exclusive.
 
-# Copy package manifests from the backend folder
-COPY backend/package*.json ./
-
-# Install production dependencies
 RUN npm install --only=production
 
-# Copy the entire backend source code
-COPY backend/ .
+# Copy everything from the current context (which should be the 'backend' folder)
+COPY . .
 
-# Expose the port the app runs on
 EXPOSE 8080
 
 # Health check using the helper script
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD node healthcheck.js || exit 1
 
-# Run the web service on container startup
 CMD [ "node", "server.js" ]
