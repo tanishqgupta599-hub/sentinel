@@ -260,10 +260,15 @@ function App() {
           if (frame && frame.image_frame_base64) {
             // CRITICAL FIX: Strip the prefix (data:image/jpeg;base64,) so Gemini gets raw base64
             image_frame_base64 = frame.image_frame_base64.replace(/^data:image\/[a-z]+;base64,/, "");
+            console.log(`[DEBUG] Captured image frame (${image_frame_base64.length} chars)`);
+          } else {
+            console.warn("[DEBUG] Capture frame returned empty data");
           }
         } catch (e) {
           console.error("Frame capture failed:", e);
         }
+      } else {
+        console.error("[DEBUG] captureFrame function is missing");
       }
 
       // 2. Get Geolocation

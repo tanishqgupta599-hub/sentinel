@@ -6,9 +6,16 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 dotenv.config();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// CRITICAL: Add a check to ensure the API key is loaded.
+if (!GEMINI_API_KEY) {
+  console.error("FATAL ERROR: GEMINI_API_KEY is not defined. Please set it in your .env file or deployment environment.");
+  process.exit(1); 
+}
+
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-// CRITICAL FIX: Switch to verified stable model for this environment
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+// FIX: Use a verified stable model name
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const app = express();
 app.use(cors());
@@ -81,78 +88,69 @@ app.post("/analyze-safety", async (req, res) => {
     return res.status(400).json({ error: "User query is required for analysis." });
   }
 
-  // SECONDARY FIX: Ensure any accidentally passed prefix is stripped on the backend too
+  // Strip prefix if present
   if (image_frame_base64 && image_frame_base64.startsWith("data:image")) {
     image_frame_base64 = image_frame_base64.replace(/^data:image\/[a-z]+;base64,/, "");
   }
 
+  // Define a strong, grounding prompt
   const prompt = `
-You are an AI Safety Guardian analyzing a real-world environment. 
+You are an AI Safety Guardian. You are provided with a USER QUERY and a REAL-TIME IMAGE from their camera.
 
-CRITICAL INSTRUCTIONS:
-1. VISUAL PRIORITY: You MUST prioritize the provided image over the user's text. If the user asks if they are safe but the image is pitch black, they are NOT safe because you cannot see the surroundings.
-2. GROUNDING: Describe exactly what you see in the image (lighting, people, environment) before making an assessment.
-3. DARKNESS PROTOCOL: If the image is dark, blurry, or obscured, you MUST report high risk due to lack of visibility. Do NOT hallucinate people or lighting that isn't there.
+CRITICAL RULES:
+1. TRUTH OVER TEXT: If the USER asks "Am I safe?" but the IMAGE is pitch black or completely dark, you MUST say they are NOT safe because you cannot see anything. 
+2. VISUAL DESCRIPTION: Start your spoken response by describing EXACTLY what you see. If it's dark, say "It is too dark for me to see your surroundings."
+3. NO HALLUCINATION: Do not mention people, lights, or streets if the image is dark.
+4. RISK ASSESSMENT: If visibility is zero (black image), the risk_level MUST be at least 8.
 
-User Query: ${user_text} 
+USER QUERY: ${user_text}
+ENVIRONMENT DATA: Lat:${latitude || "N/A"}, Lng:${longitude || "N/A"}
 
-Environment Data: 
-Latitude: ${latitude || "Unknown"} 
-Longitude: ${longitude || "Unknown"} 
-Timestamp: ${timestamp || new Date().toISOString()} 
-
-Instructions for response: 
-- Infer risk level from 0 to 10. 
-- If lighting is poor, suggest moving to a brighter area. 
-- If isolation risk is high, suggest moving to a populated area. 
-
-After analysis, respond in valid JSON format only. 
-
-IMPORTANT: 
-Do NOT use markdown. 
-Do NOT use backticks. 
-Do NOT add explanations before or after JSON. 
-Ensure "confidence" is a decimal number between 0 and 1. 
-Ensure "risk_level" is an integer between 0 and 10. 
-
-Return JSON in this exact format: 
-{ 
-  "risk_level": number, 
-  "confidence": number, 
-  "spoken_response": "Describe what you see first, then give recommendations.", 
-  "recommendations": ["string", "string"], 
-  "should_alert_emergency": true/false 
-} 
+RESPONSE FORMAT: Valid JSON only.
+{
+  "risk_level": (0-10),
+  "confidence": (0.0-1.0),
+  "spoken_response": "What you see + recommendations",
+  "recommendations": ["step 1", "step 2"],
+  "should_alert_emergency": (true/false)
+}
 `;
 
-    // 3. Request analysis from Gemini
-    try {
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: image_frame_base64,
-            mimeType: "image/jpeg",
-          },
+  try {
+    const parts = [prompt];
+    
+    // Only include image if it's a valid non-placeholder string
+    if (image_frame_base64 && image_frame_base64 !== "no-image" && image_frame_base64.length > 100) {
+      parts.push({
+        inlineData: {
+          data: image_frame_base64,
+          mimeType: "image/jpeg",
         },
-      ]);
-
-      const response = await result.response;
-      const text = response.text().trim();
-      
-      console.log("[GEMINI] raw response:", text);
-
-      try {
-        const analysis = JSON.parse(text);
-        return res.json(analysis);
-      } catch (parseError) {
-        console.error("[GEMINI] Parse error:", parseError);
-        return res.status(500).json({ error: "Failed to parse safety analysis JSON." });
-      }
-    } catch (error) {
-      console.error("[GEMINI] API error:", error);
-      return res.status(500).json({ error: "AI Safety Analysis failed. Please try again." });
+      });
+      console.log(`[GEMINI] Sending analysis request with image (${image_frame_base64.length} chars)`);
+    } else {
+      console.log("[GEMINI] Sending text-only analysis (image missing or invalid)");
+      // If image is missing, add a note to the prompt
+      parts[0] += "\n\nNOTE: No camera image was provided. Inform the user you cannot see their surroundings.";
     }
+
+    const result = await model.generateContent(parts);
+    const response = await result.response;
+    const text = response.text().replace(/```json|```/g, "").trim();
+    
+    console.log("[GEMINI] response:", text);
+
+    try {
+      const analysis = JSON.parse(text);
+      return res.json(analysis);
+    } catch (parseError) {
+      console.error("[GEMINI] Parse error:", text);
+      return res.status(500).json({ error: "Invalid AI response format." });
+    }
+  } catch (error) {
+    console.error("[GEMINI] API error:", error.message);
+    return res.status(500).json({ error: "AI Analysis failed. Please check your API key and quota." });
+  }
 });
 
 /**
