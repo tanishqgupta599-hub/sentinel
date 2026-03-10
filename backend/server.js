@@ -14,8 +14,8 @@ if (!GEMINI_API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-// FIX: Use the latest stable pointer
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+// FIX: Use the most basic stable model name
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const app = express();
 app.use(cors());
@@ -150,12 +150,11 @@ RESPONSE FORMAT: Valid JSON only.
     }
   } catch (error) {
     console.error("[GEMINI] CRITICAL API ERROR:", error.message);
-    
-    let specificError = "AI Analysis failed. Please check your API key and quota.";
-    if (error.message.includes("403")) specificError = "Invalid API Key. Please re-paste your key in Render.";
-    if (error.message.includes("429")) specificError = "API Rate Limit exceeded. Please wait 60 seconds.";
-    
-    return res.status(500).json({ error: specificError });
+    // DEBUG: Send the EXACT error message to the frontend for diagnosis
+    return res.status(500).json({ 
+      error: `Gemini API Error: ${error.message}`,
+      tip: "If this mentions 403, your API key is invalid. If 404, the model name is wrong."
+    });
   }
 });
 
