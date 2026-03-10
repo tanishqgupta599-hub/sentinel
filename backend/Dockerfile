@@ -4,17 +4,17 @@ FROM node:20-slim
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# This Dockerfile assumes the build context is the 'backend' folder itself.
-# This is managed by the 'Root Directory' setting in Render.
+# This Dockerfile assumes the build context is the project ROOT.
+# This matches 'Root Directory = Blank' and 'Dockerfile Path = backend/Dockerfile'
 
-# Copy package manifests from the current context
-COPY package*.json ./
+# Copy package manifests from the backend folder
+COPY backend/package*.json ./
 
 # Install production dependencies
 RUN npm install --only=production
 
-# Copy the rest of the backend source code
-COPY . .
+# Copy the entire backend source code
+COPY backend/ .
 
 # Expose the port the app runs on
 EXPOSE 8080
