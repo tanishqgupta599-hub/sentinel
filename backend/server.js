@@ -19,7 +19,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 /**
  * Direct REST call to Gemini API
  */
-async function callGeminiRest(payload, modelName = "gemini-1.5-flash") {
+async function callGeminiRest(payload, modelName = "gemini-2.0-flash") {
   const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
   
   console.log(`[REST] Calling model: ${modelName}`);
@@ -71,7 +71,7 @@ app.get("/debug-api", async (req, res) => {
       status: "success",
       count: generateModels.length,
       availableModels: generateModels,
-      message: "Look for 'gemini-1.5-flash' or 'gemini-1.5-pro' in this list.",
+      message: "Model versions updated to 2.x series based on your list.",
       apiKeyDefined: !!GEMINI_API_KEY,
       nodeVersion: process.version
     });
@@ -134,19 +134,24 @@ FORMAT: You MUST respond in valid JSON format ONLY.
       console.log("[GEMINI] Sending text-only request (No image provided)");
     }
 
-    // Attempt with flash first (multimodal), fallback to pro (multimodal) if needed
+    // Attempt with 2.5-flash first (latest), fallback to 2.0-flash, then 2.5-pro
     let textRaw;
     try {
-      textRaw = await callGeminiRest(contents, "gemini-1.5-flash");
+      textRaw = await callGeminiRest(contents, "gemini-2.5-flash");
     } catch (e) {
-      console.warn("[GEMINI] Flash failed, trying gemini-1.5-pro fallback...");
+      console.warn("[GEMINI] 2.5-flash failed, trying 2.0-flash fallback...");
       try {
-        textRaw = await callGeminiRest(contents, "gemini-1.5-pro");
+        textRaw = await callGeminiRest(contents, "gemini-2.0-flash");
       } catch (e2) {
-        console.error("[GEMINI] Pro fallback failed, using basic gemini-pro (text-only)...");
-        // Final fallback to text-only if multimodal fails completely
-        const textOnlyContents = [{ parts: [{ text: prompt + "\nNOTE: Image data failed to load. Evaluate based on user text only but warn user." }] }];
-        textRaw = await callGeminiRest(textOnlyContents, "gemini-pro");
+        console.warn("[GEMINI] 2.0-flash failed, trying 2.5-pro fallback...");
+        try {
+          textRaw = await callGeminiRest(contents, "gemini-2.5-pro");
+        } catch (e3) {
+          console.error("[GEMINI] All multimodal fallbacks failed, using 2.0-flash (text-only)...");
+          // Final fallback to text-only if multimodal fails completely
+          const textOnlyContents = [{ parts: [{ text: prompt + "\nNOTE: Image data failed to load. Evaluate based on user text only but warn user." }] }];
+          textRaw = await callGeminiRest(textOnlyContents, "gemini-2.0-flash");
+        }
       }
     }
 
@@ -157,7 +162,7 @@ FORMAT: You MUST respond in valid JSON format ONLY.
     return res.status(500).json({ 
       status: "error",
       error: `AI Analysis failed: ${error.message}`,
-      recommendation: "Please check if your Gemini API key has access to 'gemini-1.5-flash' in your region."
+      recommendation: "Please check if your Gemini API key has access to 'gemini-2.0-flash' or 'gemini-2.5-flash' in your region."
     });
   }
 });
