@@ -454,27 +454,38 @@ function App() {
 
   /**
    * Google Maps Initialization & Polyline Logic
+   * Enhanced with retry logic and DOM readiness checks for demo stability.
    */
   useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 5;
+
     const initMap = async () => {
-      if (!safeRoute || !mapRef.current) return;
+      if (!safeRoute || !mapRef.current) {
+        // If map element isn't in DOM yet, wait and retry
+        if (safeRoute && !mapRef.current && retryCount < maxRetries) {
+          retryCount++;
+          console.log(`[MAP] Element not ready, retry ${retryCount}...`);
+          setTimeout(initMap, 200);
+        }
+        return;
+      }
 
       try {
-        // Use modern library loader if available, otherwise fallback to window.google
+        console.log("[MAP] Starting initialization...");
         let mapsLib;
         if (window.google && window.google.maps && window.google.maps.importLibrary) {
           mapsLib = await window.google.maps.importLibrary("maps");
         } else if (window.google && window.google.maps) {
           mapsLib = window.google.maps;
         } else {
-          console.error("Google Maps not loaded yet");
+          console.warn("[MAP] Google Maps library not available yet");
           return;
         }
 
         const mapOptions = {
           center: safeRoute.user_coords || safeRoute.destination_coords,
           zoom: 15,
-          mapId: "SENTINEL_MAP_ID", // Optional but recommended for modern maps
           disableDefaultUI: true,
           styles: [
             { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
@@ -492,39 +503,22 @@ function App() {
         const map = new mapsLib.Map(mapRef.current, mapOptions);
         googleMapInstance.current = map;
 
-        // User Marker
-        if (safeRoute.user_coords) {
-          new window.google.maps.Marker({
-            position: safeRoute.user_coords,
-            map,
-            title: 'Your Location',
-            icon: {
-              path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: '#38bdf8',
-              fillOpacity: 1,
-              strokeWeight: 2,
-              strokeColor: '#ffffff'
-            }
-          });
-        }
+        // Add Markers
+        new window.google.maps.Marker({
+          position: safeRoute.user_coords,
+          map,
+          title: 'Start',
+          icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#38bdf8', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
+        });
 
-        // Destination Marker
         new window.google.maps.Marker({
           position: safeRoute.destination_coords,
           map,
           title: safeRoute.destination,
-          icon: {
-            path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-            scale: 6,
-            fillColor: '#22c55e',
-            fillOpacity: 1,
-            strokeWeight: 2,
-            strokeColor: '#ffffff'
-          }
+          icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Polyline Path
+        // Add Polyline
         if (safeRoute.polyline && window.google.maps.geometry) {
           const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
           new window.google.maps.Polyline({
@@ -537,16 +531,19 @@ function App() {
           });
 
           const bounds = new window.google.maps.LatLngBounds();
-          if (safeRoute.user_coords) bounds.extend(safeRoute.user_coords);
+          bounds.extend(safeRoute.user_coords);
           decodedPath.forEach(point => bounds.extend(point));
           map.fitBounds(bounds);
         }
+        console.log("[MAP] Initialization successful");
       } catch (e) {
-        console.error("Map initialization failed:", e);
+        console.error("[MAP] Critical initialization failure:", e);
       }
     };
 
-    initMap();
+    // Small delay to let React commit the DOM
+    const timeoutId = setTimeout(initMap, 100);
+    return () => clearTimeout(timeoutId);
   }, [safeRoute]);
 
   useEffect(() => {
@@ -792,27 +789,49 @@ function App() {
                     )}
 
                     {/* NEW: Map container directly inside the right stack */}
-                    <div className="persistent-map-area" style={{ display: 'flex', minHeight: '250px' }}>
-                      {!safeRoute && isRequestingRoute && (
+                    <div 
+                      className="persistent-map-area" 
+                      style={{ 
+                        display: (activeCheckpoint || safeRoute) ? 'flex' : 'none', 
+                        minHeight: '250px',
+                        visibility: 'visible',
+                        opacity: 1
+                      }}
+                    >
+                      {(!safeRoute && isRequestingRoute) && (
                         <div className="integrated-map-skeleton">
                           <div className="srp-spinner"></div>
                           <span>Initializing Secure Route...</span>
                         </div>
                       )}
-                      {!safeRoute && !isRequestingRoute && (
+                      
+                      {(!safeRoute && !isRequestingRoute) && (
                         <div className="integrated-map-skeleton">
                           <span>Navigation will appear here when activated.</span>
                         </div>
                       )}
-                      {safeRoute && (
-                        <div className="integrated-map-container" style={{ width: '100%', height: '100%' }}>
-                          <div id="safeRouteMap" ref={mapRef} style={{ width: '100%', height: '100%', minHeight: '250px' }}></div>
+
+                      {/* The map div is ALWAYS in the DOM once triggered, but we control visibility of children */}
+                      <div 
+                        className="integrated-map-container" 
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          display: safeRoute ? 'block' : 'none' 
+                        }}
+                      >
+                        <div 
+                          id="safeRouteMap" 
+                          ref={mapRef} 
+                          style={{ width: '100%', height: '100%', minHeight: '250px' }}
+                        ></div>
+                        {safeRoute && (
                           <div className="safe-route-info">
                             <div className="safe-route-dest">{safeRoute.destination}</div>
                             <div className="safe-route-eta">ETA: {safeRoute.duration_text}</div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
