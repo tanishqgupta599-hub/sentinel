@@ -297,19 +297,21 @@ function App() {
         console.error("[DEBUG] captureFrame function is missing");
       }
 
-      // 2. Get Geolocation
-      let location = { latitude: null, longitude: null };
+      // 2. Get Geolocation (With Mock Fallback for Demo)
+      let location = { latitude: MOCK_LOCATION.latitude, longitude: MOCK_LOCATION.longitude };
       if (navigator.geolocation) {
         try {
           const position = await new Promise((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
           });
-          location = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          };
+          if (position.coords.latitude && position.coords.longitude) {
+            location = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            };
+          }
         } catch (e) {
-          console.warn("Geolocation failed:", e);
+          console.warn("Geolocation failed, using demo coords:", e);
         }
       }
 
@@ -345,6 +347,7 @@ function App() {
         // COMBINE original AI analysis with the route setup message
         spoken_response = `${spoken_response} Your safety risk is elevated. I am setting up navigation to the nearest safety checkpoint.`;
         setActiveCheckpoint(SAFE_CHECKPOINT);
+        setResponseActive(true);
         
         setLogs(prev => [...prev, { 
           type: 'SYSTEM', 
@@ -668,6 +671,43 @@ function App() {
               responseActive={responseActive}
               setCaptureFrame={setCaptureFrame}
             />
+
+            {/* RESTORED: Map container exactly below the camera feed */}
+            <div className="persistent-map-area" style={{ display: 'flex', minHeight: '300px' }}>
+              {(!safeRoute && isRequestingRoute) && (
+                <div className="integrated-map-skeleton">
+                  <div className="srp-spinner"></div>
+                  <span>Locating Safety Hub...</span>
+                </div>
+              )}
+              
+              {!safeRoute && !isRequestingRoute && (
+                <div className="integrated-map-skeleton">
+                  <span>Navigation Active in Critical Situations</span>
+                </div>
+              )}
+
+              <div 
+                className="integrated-map-container" 
+                style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  display: safeRoute ? 'block' : 'none' 
+                }}
+              >
+                <div 
+                  id="safeRouteMap" 
+                  ref={mapRef} 
+                  style={{ width: '100%', height: '100%', minHeight: '300px' }}
+                ></div>
+                {safeRoute && (
+                  <div className="safe-route-info">
+                    <div className="safe-route-dest">{safeRoute.destination}</div>
+                    <div className="safe-route-eta">ETA: {safeRoute.duration_text}</div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <div className="layout-center">
             <div className="center-stack">
@@ -742,89 +782,31 @@ function App() {
               </button>
             </form>
 
-                {/* RIGHT COLUMN: Safety Checkpoint + Map placed directly below chat input */}
-                {(activeCheckpoint || safeRoute) && (
+                {/* RIGHT COLUMN: Safety Checkpoint (No map here anymore) */}
+                {activeCheckpoint && (
                   <div className="right-safety-stack">
-                    {activeCheckpoint && (
-                      <div className="safety-checkpoint-navigation">
-                        <div className="checkpoint-header">
-                          <span className="checkpoint-badge">SAFETY CHECKPOINT</span>
-                          <span className="checkpoint-name">{activeCheckpoint.name}</span>
-                        </div>
-                        <div className="checkpoint-actions">
-                          <button 
-                            className={`checkpoint-status-btn ${safeRoute ? 'active' : ''}`}
-                            onClick={() => {
-                              const coords = emergencyLocation
-                                ? { latitude: emergencyLocation.lat, longitude: emergencyLocation.lng }
-                                : null
-                              handleSafeRouteTrigger(true, SAFE_CHECKPOINT, coords)
-                            }}
-                            disabled={isRequestingRoute}
-                          >
-                            {isRequestingRoute
-                              ? 'CONNECTING…'
-                              : safeRoute
-                                ? 'IN-APP NAVIGATION ACTIVE'
-                                : 'START IN-APP NAV'}
-                          </button>
-                          <button
-                            className="checkpoint-dismiss-btn"
-                            onClick={() => {
-                              setActiveCheckpoint(null);
-                              setSafeRoute(null);
-                              setIsLiveGuardianActive(false);
-                            }}
-                          >
-                            CLOSE MAP
-                          </button>
-                        </div>
+                    <div className="safety-checkpoint-navigation">
+                      <div className="checkpoint-header">
+                        <span className="checkpoint-badge">SAFETY CHECKPOINT</span>
+                        <span className="checkpoint-name">{activeCheckpoint.name}</span>
                       </div>
-                    )}
-
-                    {/* NEW: Map container directly inside the right stack */}
-                    <div 
-                      className="persistent-map-area" 
-                      style={{ 
-                        display: (activeCheckpoint || safeRoute) ? 'flex' : 'none', 
-                        minHeight: '250px',
-                        visibility: 'visible',
-                        opacity: 1
-                      }}
-                    >
-                      {(!safeRoute && isRequestingRoute) && (
-                        <div className="integrated-map-skeleton">
-                          <div className="srp-spinner"></div>
-                          <span>Initializing Secure Route...</span>
-                        </div>
-                      )}
-                      
-                      {(!safeRoute && !isRequestingRoute) && (
-                        <div className="integrated-map-skeleton">
-                          <span>Navigation will appear here when activated.</span>
-                        </div>
-                      )}
-
-                      {/* The map div is ALWAYS in the DOM once triggered, but we control visibility of children */}
-                      <div 
-                        className="integrated-map-container" 
-                        style={{ 
-                          width: '100%', 
-                          height: '100%', 
-                          display: safeRoute ? 'block' : 'none' 
-                        }}
-                      >
-                        <div 
-                          id="safeRouteMap" 
-                          ref={mapRef} 
-                          style={{ width: '100%', height: '100%', minHeight: '250px' }}
-                        ></div>
-                        {safeRoute && (
-                          <div className="safe-route-info">
-                            <div className="safe-route-dest">{safeRoute.destination}</div>
-                            <div className="safe-route-eta">ETA: {safeRoute.duration_text}</div>
-                          </div>
-                        )}
+                      <div className="checkpoint-actions">
+                        <button 
+                          className={`checkpoint-status-btn active`}
+                          disabled={true}
+                        >
+                          IN-APP NAVIGATION ACTIVE
+                        </button>
+                        <button
+                          className="checkpoint-dismiss-btn"
+                          onClick={() => {
+                            setActiveCheckpoint(null);
+                            setSafeRoute(null);
+                            setIsLiveGuardianActive(false);
+                          }}
+                        >
+                          CLOSE MAP
+                        </button>
                       </div>
                     </div>
                   </div>
