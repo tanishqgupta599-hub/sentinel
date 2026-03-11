@@ -454,58 +454,55 @@ function App() {
 
   /**
    * Google Maps Initialization & Polyline Logic
-   * FINAL STABILITY FIX: Added explicit height, visibility, and logging.
+   * BACK-TO-BASICS FIX: Using standard synchronous markers and polyline.
    */
   useEffect(() => {
     let retryCount = 0;
-    const maxRetries = 10;
+    const maxRetries = 15; // Even more retries for slow loads
 
-    const initMap = async () => {
-      console.log("[MAP-DEBUG] Attempting to init map. safeRoute:", !!safeRoute);
+    const initMap = () => {
+      console.log("[MAP-DEBUG] Attempting init. safeRoute:", !!safeRoute, "mapRef:", !!mapRef.current);
       
       if (!safeRoute || !mapRef.current) {
         if (safeRoute && !mapRef.current && retryCount < maxRetries) {
           retryCount++;
-          console.log(`[MAP-DEBUG] Element not found. Retry ${retryCount}/10...`);
-          setTimeout(initMap, 500);
+          console.log(`[MAP-DEBUG] Box not in DOM. Retry ${retryCount}/15...`);
+          setTimeout(initMap, 400);
         }
         return;
       }
 
       try {
-        console.log("[MAP-DEBUG] Element found! Initializing Google Maps...");
-        
-        let mapsLib;
-        if (window.google && window.google.maps && window.google.maps.importLibrary) {
-          mapsLib = await window.google.maps.importLibrary("maps");
-        } else if (window.google && window.google.maps) {
-          mapsLib = window.google.maps;
-        } else {
-          console.warn("[MAP-DEBUG] Google library not ready yet.");
+        if (!window.google || !window.google.maps) {
+          console.warn("[MAP-DEBUG] Google script not globally available yet.");
+          if (retryCount < maxRetries) {
+            retryCount++;
+            setTimeout(initMap, 1000);
+          }
           return;
         }
 
+        console.log("[MAP-DEBUG] All systems go! Rendering map...");
+        
         const mapOptions = {
           center: safeRoute.user_coords || safeRoute.destination_coords,
-          zoom: 14,
+          zoom: 13,
           disableDefaultUI: true,
           styles: [
             { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
-            { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
-            { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
             { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
             { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] }
           ]
         };
 
-        const map = new mapsLib.Map(mapRef.current, mapOptions);
+        const map = new window.google.maps.Map(mapRef.current, mapOptions);
         googleMapInstance.current = map;
 
-        // Add Markers
+        // Add Markers (Synchronous)
         new window.google.maps.Marker({
           position: safeRoute.user_coords,
           map,
-          title: 'You',
+          title: 'Start',
           icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: '#38bdf8', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
@@ -516,7 +513,7 @@ function App() {
           icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Add Polyline
+        // Add Polyline (Synchronous)
         if (safeRoute.polyline && window.google.maps.geometry) {
           const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
           new window.google.maps.Polyline({
@@ -524,7 +521,7 @@ function App() {
             geodesic: true,
             strokeColor: '#38bdf8',
             strokeOpacity: 1.0,
-            strokeWeight: 5,
+            strokeWeight: 6,
             map
           });
 
@@ -533,13 +530,13 @@ function App() {
           decodedPath.forEach(p => bounds.extend(p));
           map.fitBounds(bounds);
         }
-        console.log("[MAP-DEBUG] MAP LOADED SUCCESSFULLY!");
+        console.log("[MAP-DEBUG] SUCCESS: Map and Route rendered.");
       } catch (err) {
-        console.error("[MAP-DEBUG] Error:", err);
+        console.error("[MAP-DEBUG] ERROR during render:", err);
       }
     };
 
-    const t = setTimeout(initMap, 300);
+    const t = setTimeout(initMap, 500);
     return () => clearTimeout(t);
   }, [safeRoute]);
 
