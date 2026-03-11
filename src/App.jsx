@@ -460,62 +460,47 @@ function App() {
     }
   }
 
-  // Google Maps Initializer
+  /**
+   * Google Maps Initialization & Polyline Logic
+   */
   useEffect(() => {
-    if (safeRoute && mapRef.current) {
-      // Ensure Google Maps script is loaded
-      if (!window.google || !window.google.maps) {
-        console.error('Google Maps script not loaded');
-        setLogs(prev => [...prev, { type: 'SYSTEM', message: 'Google Maps library not loaded yet. Please wait...' }]);
-        return;
-      }
+    const initMap = async () => {
+      if (!safeRoute || !mapRef.current) return;
 
-      // Small delay to ensure container is rendered and has height
-      const timeoutId = setTimeout(() => {
-        if (!mapRef.current) return;
+      try {
+        // Use modern library loader if available, otherwise fallback to window.google
+        let mapsLib;
+        if (window.google && window.google.maps && window.google.maps.importLibrary) {
+          mapsLib = await window.google.maps.importLibrary("maps");
+        } else if (window.google && window.google.maps) {
+          mapsLib = window.google.maps;
+        } else {
+          console.error("Google Maps not loaded yet");
+          return;
+        }
 
-        const map = new window.google.maps.Map(mapRef.current, {
+        const mapOptions = {
           center: safeRoute.user_coords || safeRoute.destination_coords,
           zoom: 15,
+          mapId: "SENTINEL_MAP_ID", // Optional but recommended for modern maps
           disableDefaultUI: true,
           styles: [
             { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
             { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
             { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
-            {
-              featureType: 'administrative.locality',
-              elementType: 'labels.text.fill',
-              stylers: [{ color: '#d59563' }]
-            },
-            {
-              featureType: 'poi',
-              elementType: 'labels.text.fill',
-              stylers: [{ color: '#d59563' }]
-            },
-            {
-              featureType: 'poi.park',
-              elementType: 'geometry',
-              stylers: [{ color: '#263c3f' }]
-            },
-            {
-              featureType: 'road',
-              elementType: 'geometry',
-              stylers: [{ color: '#38414e' }]
-            },
-            {
-              featureType: 'road',
-              elementType: 'geometry.stroke',
-              stylers: [{ color: '#212a37' }]
-            },
-            {
-              featureType: 'water',
-              elementType: 'geometry',
-              stylers: [{ color: '#17263c' }]
-            }
+            { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
+            { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
+            { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#263c3f' }] },
+            { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
+            { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
+            { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] }
           ]
-        })
+        };
 
-        // User Marker (Blue)
+        const map = new mapsLib.Map(mapRef.current, mapOptions);
+        googleMapInstance.current = map;
+
+        // User Marker
         if (safeRoute.user_coords) {
           new window.google.maps.Marker({
             position: safeRoute.user_coords,
@@ -523,54 +508,54 @@ function App() {
             title: 'Your Location',
             icon: {
               path: window.google.maps.SymbolPath.CIRCLE,
-              scale: 7,
+              scale: 8,
               fillColor: '#38bdf8',
               fillOpacity: 1,
               strokeWeight: 2,
               strokeColor: '#ffffff'
             }
-          })
+          });
         }
 
-        // Destination Marker (Green)
-        const destMarker = new window.google.maps.Marker({
+        // Destination Marker
+        new window.google.maps.Marker({
           position: safeRoute.destination_coords,
           map,
           title: safeRoute.destination,
           icon: {
             path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-            scale: 5,
+            scale: 6,
             fillColor: '#22c55e',
             fillOpacity: 1,
             strokeWeight: 2,
             strokeColor: '#ffffff'
           }
-        })
+        });
 
-        if (safeRoute.polyline) {
-          const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline)
-          const polyline = new window.google.maps.Polyline({
+        // Polyline Path
+        if (safeRoute.polyline && window.google.maps.geometry) {
+          const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
+          new window.google.maps.Polyline({
             path: decodedPath,
             geodesic: true,
             strokeColor: '#38bdf8',
             strokeOpacity: 1.0,
             strokeWeight: 4,
             map
-          })
+          });
 
-          // Fit map to show both markers
           const bounds = new window.google.maps.LatLngBounds();
           if (safeRoute.user_coords) bounds.extend(safeRoute.user_coords);
           decodedPath.forEach(point => bounds.extend(point));
           map.fitBounds(bounds);
         }
+      } catch (e) {
+        console.error("Map initialization failed:", e);
+      }
+    };
 
-        googleMapInstance.current = map;
-      }, 100);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [safeRoute])
+    initMap();
+  }, [safeRoute]);
 
   useEffect(() => {
     const prevMode = prevSystemModeRef.current
