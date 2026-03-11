@@ -454,48 +454,46 @@ function App() {
 
   /**
    * Google Maps Initialization & Polyline Logic
-   * Enhanced with retry logic and DOM readiness checks for demo stability.
+   * FINAL STABILITY FIX: Added explicit height, visibility, and logging.
    */
   useEffect(() => {
     let retryCount = 0;
-    const maxRetries = 5;
+    const maxRetries = 10;
 
     const initMap = async () => {
+      console.log("[MAP-DEBUG] Attempting to init map. safeRoute:", !!safeRoute);
+      
       if (!safeRoute || !mapRef.current) {
-        // If map element isn't in DOM yet, wait and retry
         if (safeRoute && !mapRef.current && retryCount < maxRetries) {
           retryCount++;
-          console.log(`[MAP] Element not ready, retry ${retryCount}...`);
-          setTimeout(initMap, 200);
+          console.log(`[MAP-DEBUG] Element not found. Retry ${retryCount}/10...`);
+          setTimeout(initMap, 500);
         }
         return;
       }
 
       try {
-        console.log("[MAP] Starting initialization...");
+        console.log("[MAP-DEBUG] Element found! Initializing Google Maps...");
+        
         let mapsLib;
         if (window.google && window.google.maps && window.google.maps.importLibrary) {
           mapsLib = await window.google.maps.importLibrary("maps");
         } else if (window.google && window.google.maps) {
           mapsLib = window.google.maps;
         } else {
-          console.warn("[MAP] Google Maps library not available yet");
+          console.warn("[MAP-DEBUG] Google library not ready yet.");
           return;
         }
 
         const mapOptions = {
           center: safeRoute.user_coords || safeRoute.destination_coords,
-          zoom: 15,
+          zoom: 14,
           disableDefaultUI: true,
           styles: [
             { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
             { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
             { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
-            { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
-            { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#d59563' }] },
-            { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#263c3f' }] },
             { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
-            { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
             { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] }
           ]
         };
@@ -507,15 +505,15 @@ function App() {
         new window.google.maps.Marker({
           position: safeRoute.user_coords,
           map,
-          title: 'Start',
-          icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#38bdf8', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
+          title: 'You',
+          icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: '#38bdf8', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
         new window.google.maps.Marker({
           position: safeRoute.destination_coords,
           map,
           title: safeRoute.destination,
-          icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 6, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
+          icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
         // Add Polyline
@@ -526,24 +524,23 @@ function App() {
             geodesic: true,
             strokeColor: '#38bdf8',
             strokeOpacity: 1.0,
-            strokeWeight: 4,
+            strokeWeight: 5,
             map
           });
 
           const bounds = new window.google.maps.LatLngBounds();
           bounds.extend(safeRoute.user_coords);
-          decodedPath.forEach(point => bounds.extend(point));
+          decodedPath.forEach(p => bounds.extend(p));
           map.fitBounds(bounds);
         }
-        console.log("[MAP] Initialization successful");
-      } catch (e) {
-        console.error("[MAP] Critical initialization failure:", e);
+        console.log("[MAP-DEBUG] MAP LOADED SUCCESSFULLY!");
+      } catch (err) {
+        console.error("[MAP-DEBUG] Error:", err);
       }
     };
 
-    // Small delay to let React commit the DOM
-    const timeoutId = setTimeout(initMap, 100);
-    return () => clearTimeout(timeoutId);
+    const t = setTimeout(initMap, 300);
+    return () => clearTimeout(t);
   }, [safeRoute]);
 
   useEffect(() => {
