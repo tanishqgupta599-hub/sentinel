@@ -36,8 +36,13 @@ function App() {
   // Safety Checkpoint Constant
   const SAFE_CHECKPOINT = {
     name: "Nearest Safety Hub",
-    latitude: 25.2048,
-    longitude: 55.2708
+    latitude: 28.7041,  // Preset: New Delhi Center
+    longitude: 77.1025
+  };
+
+  const MOCK_LOCATION = {
+    latitude: 28.6139, // Preset: Demo starting point
+    longitude: 77.2090
   };
 
   // Layer 4 & 5 Persistence
@@ -406,10 +411,8 @@ function App() {
   */
 
   const handleSafeRouteTrigger = async (userRequested = false, customDestination = null, preFetchedCoords = null) => {
-    if (!navigator.geolocation && !preFetchedCoords) {
-      setLogs(prev => [...prev, { type: 'SYSTEM', message: 'Geolocation is not supported by your browser.' }]);
-      return
-    }
+    // FORCE MOCK LOCATION FOR DEMO STABILITY
+    const demoCoords = preFetchedCoords || { latitude: MOCK_LOCATION.latitude, longitude: MOCK_LOCATION.longitude };
     
     setLogs(prev => [...prev, { type: 'SYSTEM', message: 'Locating user for safe route...' }]);
     setIsRequestingRoute(true)
@@ -417,12 +420,17 @@ function App() {
     const startRouting = async (lat, lng) => {
       try {
         console.log('Routing from:', lat, lng);
-        const routeData = await getSafeRoute(lat, lng, customDestination)
+        // Use the preset safe checkpoint as the destination
+        const dest = customDestination || SAFE_CHECKPOINT;
+        const routeData = await getSafeRoute(lat, lng, dest)
+        
         console.log('Route data received:', routeData);
         
         setSafeRoute({
           ...routeData,
-          user_coords: { lat, lng }
+          user_coords: { lat, lng },
+          destination_coords: { lat: dest.latitude, lng: dest.longitude },
+          destination: dest.name
         })
         setIsLiveGuardianActive(true)
         
@@ -440,24 +448,8 @@ function App() {
       }
     }
 
-    if (preFetchedCoords && preFetchedCoords.latitude && preFetchedCoords.longitude) {
-      // Instant routing if we already have coordinates
-      await startRouting(preFetchedCoords.latitude, preFetchedCoords.longitude);
-    } else {
-      // Fallback to fetching geolocation
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords
-          await startRouting(latitude, longitude);
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          setIsRequestingRoute(false);
-          setLogs(prev => [...prev, { type: 'SYSTEM', message: `Location access denied: ${error.message}. Please enable location permissions.` }]);
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      )
-    }
+    // Always use demoCoords for the demo video
+    await startRouting(demoCoords.latitude, demoCoords.longitude);
   }
 
   /**
@@ -800,7 +792,7 @@ function App() {
                     )}
 
                     {/* NEW: Map container directly inside the right stack */}
-                    <div className="persistent-map-area">
+                    <div className="persistent-map-area" style={{ display: 'flex', minHeight: '250px' }}>
                       {!safeRoute && isRequestingRoute && (
                         <div className="integrated-map-skeleton">
                           <div className="srp-spinner"></div>
@@ -813,8 +805,8 @@ function App() {
                         </div>
                       )}
                       {safeRoute && (
-                        <div className="integrated-map-container">
-                          <div id="safeRouteMap" ref={mapRef}></div>
+                        <div className="integrated-map-container" style={{ width: '100%', height: '100%' }}>
+                          <div id="safeRouteMap" ref={mapRef} style={{ width: '100%', height: '100%', minHeight: '250px' }}></div>
                           <div className="safe-route-info">
                             <div className="safe-route-dest">{safeRoute.destination}</div>
                             <div className="safe-route-eta">ETA: {safeRoute.duration_text}</div>
