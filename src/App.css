@@ -741,7 +741,7 @@
   margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .layout-left {
@@ -1920,15 +1920,16 @@
 /* Reserve consistent vertical space so nothing jumps when map mounts */
 .persistent-map-area {
   width: 100%;
-  height: 300px;
+  height: 250px;
   background: rgba(15, 23, 42, 0.4);
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   position: relative;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .integrated-map-container {
@@ -1940,7 +1941,27 @@
 #safeRouteMap {
   width: 100%;
   height: 100%;
-  min-height: 300px;
+  min-height: 250px;
+}
+
+.integrated-map-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.srp-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(56, 189, 248, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
