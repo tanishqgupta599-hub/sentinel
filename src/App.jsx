@@ -464,7 +464,6 @@ function App() {
     window.initMap = () => {
       console.log("[MAP-DEBUG] Global initMap callback TRIGGERED.");
       window.google_maps_loaded = true;
-      // Manually trigger a re-render if needed or just let the initMap hook handle it
     };
 
     const loadGoogleMapsScript = () => {
@@ -472,16 +471,12 @@ function App() {
         return;
       }
 
-      const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!key) {
-        console.error("[MAP-DEBUG] CRITICAL: No Google Maps API key found!");
-        return;
-      }
-
-      console.log("[MAP-DEBUG] Injecting Google Maps script with callback...");
+      // USE THE HARDCODED KEY DIRECTLY TO BYPASS VITE REPLACEMENT ISSUES
+      const key = "AIzaSyDwjHQzkQCfzPbJeqbWCm4GmIxRHbjFXE0"; 
+      
+      console.log("[MAP-DEBUG] Injecting Google Maps script with HARDCODED key...");
       const script = document.createElement('script');
       script.id = 'google-maps-script';
-      // Added &callback=initMap to the URL
       script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,marker&callback=initMap`;
       script.async = true;
       script.defer = true;
