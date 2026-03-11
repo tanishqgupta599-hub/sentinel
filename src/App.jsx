@@ -456,31 +456,35 @@ function App() {
   }
 
   /**
-   * 1. Google Maps SCRIPT Loader
-   * This ensures the API key is injected correctly from the environment.
+   * 1. Google Maps SCRIPT Loader with CALLBACK
+   * This ensures the API key is injected and the global initMap is called.
    */
   useEffect(() => {
+    // Define the global callback function
+    window.initMap = () => {
+      console.log("[MAP-DEBUG] Global initMap callback TRIGGERED.");
+      window.google_maps_loaded = true;
+      // Manually trigger a re-render if needed or just let the initMap hook handle it
+    };
+
     const loadGoogleMapsScript = () => {
-      // If already loading or loaded, don't do anything
       if (document.getElementById('google-maps-script')) {
-        console.log("[MAP-DEBUG] Script already present.");
         return;
       }
 
       const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
       if (!key) {
-        console.error("[MAP-DEBUG] CRITICAL: No Google Maps API key found in VITE environment!");
+        console.error("[MAP-DEBUG] CRITICAL: No Google Maps API key found!");
         return;
       }
 
-      console.log("[MAP-DEBUG] Injecting Google Maps script tag...");
+      console.log("[MAP-DEBUG] Injecting Google Maps script with callback...");
       const script = document.createElement('script');
       script.id = 'google-maps-script';
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,marker`;
+      // Added &callback=initMap to the URL
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,marker&callback=initMap`;
       script.async = true;
       script.defer = true;
-      script.onload = () => console.log("[MAP-DEBUG] Google Maps script LOADED.");
-      script.onerror = () => console.error("[MAP-DEBUG] Google Maps script FAILED to load.");
       document.head.appendChild(script);
     };
 
@@ -489,19 +493,18 @@ function App() {
 
   /**
    * 2. Google Maps INITIALIZATION Logic
-   * BACK-TO-BASICS FIX: Using standard synchronous markers and polyline.
+   * Uses a combination of safeRoute state and the loaded flag.
    */
   useEffect(() => {
     let retryCount = 0;
-    const maxRetries = 15;
+    const maxRetries = 20;
 
     const initMap = () => {
-      console.log("[MAP-DEBUG] Attempting init. safeRoute:", !!safeRoute, "mapRef:", !!mapRef.current);
+      console.log("[MAP-DEBUG] Attempting init. safeRoute:", !!safeRoute, "DOM ready:", !!mapRef.current, "Google ready:", !!(window.google && window.google.maps));
       
       if (!safeRoute || !mapRef.current) {
         if (safeRoute && !mapRef.current && retryCount < maxRetries) {
           retryCount++;
-          console.log(`[MAP-DEBUG] Box not in DOM. Retry ${retryCount}/15...`);
           setTimeout(initMap, 500);
         }
         return;
@@ -509,7 +512,7 @@ function App() {
 
       try {
         if (!window.google || !window.google.maps) {
-          console.warn("[MAP-DEBUG] window.google not available yet.");
+          console.warn("[MAP-DEBUG] window.google not available yet. Retrying...");
           if (retryCount < maxRetries) {
             retryCount++;
             setTimeout(initMap, 1000);
@@ -533,7 +536,7 @@ function App() {
         const map = new window.google.maps.Map(mapRef.current, mapOptions);
         googleMapInstance.current = map;
 
-        // Add Markers (Classic)
+        // Add Markers
         new window.google.maps.Marker({
           position: safeRoute.user_coords,
           map,
@@ -548,7 +551,7 @@ function App() {
           icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Add Polyline (Classic)
+        // Add Polyline
         if (safeRoute.polyline && window.google.maps.geometry) {
           const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
           new window.google.maps.Polyline({
@@ -571,7 +574,7 @@ function App() {
       }
     };
 
-    const t = setTimeout(initMap, 600);
+    const t = setTimeout(initMap, 800);
     return () => clearTimeout(t);
   }, [safeRoute]);
 
