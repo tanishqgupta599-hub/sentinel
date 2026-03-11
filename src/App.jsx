@@ -214,9 +214,30 @@ function App() {
   // Professional Anti-Spam Voice Layer
   const speak = (text) => {
     if (!window.speechSynthesis) return
+    
+    // iOS/Safari fix: Cancel current speech and create a fresh instance
     window.speechSynthesis.cancel()
+    
     const utterance = new SpeechSynthesisUtterance(text)
+    
+    // Professional Voice Settings
+    utterance.rate = 1.0
+    utterance.pitch = 1.0
+    utterance.volume = 1.0
+    
     window.speechSynthesis.speak(utterance)
+  }
+
+  /**
+   * iOS Audio Unlock Trick:
+   * Primes the speech engine on user touch to bypass Apple's "user-activation" requirement.
+   */
+  const unlockAudio = () => {
+    if (!window.speechSynthesis) return
+    const silentUtterance = new SpeechSynthesisUtterance(' ')
+    silentUtterance.volume = 0
+    window.speechSynthesis.speak(silentUtterance)
+    console.log('[SYSTEM] iOS Speech Engine Primed')
   }
 
   // State Transition Layer
@@ -741,6 +762,10 @@ function App() {
               className="transcript-input-bar"
               onSubmit={async (event) => {
                 event.preventDefault()
+                
+                // UNLOCK AUDIO FOR iOS: Must happen on the direct touch event
+                unlockAudio()
+                
                 const trimmed = (chatDraft || '').trim()
                 if (!trimmed) return
                 setLogs((prev) => [
