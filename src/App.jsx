@@ -456,12 +456,44 @@ function App() {
   }
 
   /**
-   * Google Maps Initialization & Polyline Logic
+   * 1. Google Maps SCRIPT Loader
+   * This ensures the API key is injected correctly from the environment.
+   */
+  useEffect(() => {
+    const loadGoogleMapsScript = () => {
+      // If already loading or loaded, don't do anything
+      if (document.getElementById('google-maps-script')) {
+        console.log("[MAP-DEBUG] Script already present.");
+        return;
+      }
+
+      const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!key) {
+        console.error("[MAP-DEBUG] CRITICAL: No Google Maps API key found in VITE environment!");
+        return;
+      }
+
+      console.log("[MAP-DEBUG] Injecting Google Maps script tag...");
+      const script = document.createElement('script');
+      script.id = 'google-maps-script';
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,marker`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => console.log("[MAP-DEBUG] Google Maps script LOADED.");
+      script.onerror = () => console.error("[MAP-DEBUG] Google Maps script FAILED to load.");
+      document.head.appendChild(script);
+    };
+
+    loadGoogleMapsScript();
+  }, []);
+
+  /**
+   * 2. Google Maps INITIALIZATION Logic
    * BACK-TO-BASICS FIX: Using standard synchronous markers and polyline.
    */
   useEffect(() => {
     let retryCount = 0;
-    const maxRetries = 15; // Even more retries for slow loads
+    const maxRetries = 15;
 
     const initMap = () => {
       console.log("[MAP-DEBUG] Attempting init. safeRoute:", !!safeRoute, "mapRef:", !!mapRef.current);
@@ -470,14 +502,14 @@ function App() {
         if (safeRoute && !mapRef.current && retryCount < maxRetries) {
           retryCount++;
           console.log(`[MAP-DEBUG] Box not in DOM. Retry ${retryCount}/15...`);
-          setTimeout(initMap, 400);
+          setTimeout(initMap, 500);
         }
         return;
       }
 
       try {
         if (!window.google || !window.google.maps) {
-          console.warn("[MAP-DEBUG] Google script not globally available yet.");
+          console.warn("[MAP-DEBUG] window.google not available yet.");
           if (retryCount < maxRetries) {
             retryCount++;
             setTimeout(initMap, 1000);
@@ -485,7 +517,7 @@ function App() {
           return;
         }
 
-        console.log("[MAP-DEBUG] All systems go! Rendering map...");
+        console.log("[MAP-DEBUG] Rendering map on screen...");
         
         const mapOptions = {
           center: safeRoute.user_coords || safeRoute.destination_coords,
@@ -501,7 +533,7 @@ function App() {
         const map = new window.google.maps.Map(mapRef.current, mapOptions);
         googleMapInstance.current = map;
 
-        // Add Markers (Synchronous)
+        // Add Markers (Classic)
         new window.google.maps.Marker({
           position: safeRoute.user_coords,
           map,
@@ -516,7 +548,7 @@ function App() {
           icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Add Polyline (Synchronous)
+        // Add Polyline (Classic)
         if (safeRoute.polyline && window.google.maps.geometry) {
           const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
           new window.google.maps.Polyline({
@@ -539,7 +571,7 @@ function App() {
       }
     };
 
-    const t = setTimeout(initMap, 500);
+    const t = setTimeout(initMap, 600);
     return () => clearTimeout(t);
   }, [safeRoute]);
 
