@@ -556,24 +556,43 @@ function App() {
           icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Add Polyline
-        if (safeRoute.polyline && window.google.maps.geometry) {
-          const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
-          new window.google.maps.Polyline({
-            path: decodedPath,
-            geodesic: true,
+        // DRAW REAL STREET ROUTE (Directions API)
+        const directionsService = new window.google.maps.DirectionsService();
+        const directionsRenderer = new window.google.maps.DirectionsRenderer({
+          map: map,
+          suppressMarkers: true, // Keep our custom markers
+          polylineOptions: {
             strokeColor: '#38bdf8',
-            strokeOpacity: 1.0,
-            strokeWeight: 6,
-            map
-          });
+            strokeOpacity: 0.8,
+            strokeWeight: 6
+          }
+        });
 
-          // Fit view to include both points
-          const bounds = new window.google.maps.LatLngBounds();
-          bounds.extend(center);
-          bounds.extend(destination);
-          map.fitBounds(bounds, 50);
-        }
+        directionsService.route(
+          {
+            origin: center,
+            destination: destination,
+            travelMode: window.google.maps.TravelMode.WALKING
+          },
+          (result, status) => {
+            if (status === window.google.maps.DirectionsStatus.OK) {
+              directionsRenderer.setDirections(result);
+              console.log("[MAP-DEBUG] Route drawn successfully.");
+            } else {
+              console.error("[MAP-DEBUG] Directions request failed due to " + status);
+              
+              // FALLBACK: Simple line if Directions API fails
+              new window.google.maps.Polyline({
+                path: [center, destination],
+                geodesic: true,
+                strokeColor: '#38bdf8',
+                strokeOpacity: 1.0,
+                strokeWeight: 4,
+                map
+              });
+            }
+          }
+        );
         
         console.log("[MAP-DEBUG] SUCCESS: Zoomed map rendered at local coordinates.");
       } catch (err) {
