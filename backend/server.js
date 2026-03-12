@@ -1,8 +1,5 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -10,6 +7,8 @@ if (!GEMINI_API_KEY) {
   console.error("FATAL ERROR: GEMINI_API_KEY is not defined.");
   process.exit(1); 
 }
+
+import { analyzeSafetyWithGenai } from './geminiClient.js';
 
 const app = express();
 app.use(cors());
@@ -102,8 +101,9 @@ ENVIRONMENT: Lat:${latitude || "N/A"}, Lng:${longitude || "N/A"}
 CRITICAL RULES:
 1. If the image is PITCH BLACK, DARK, or the lens is covered, you MUST say: "I cannot see your surroundings. It is pitch black. High-risk situation."
 2. DO NOT assume safety if the image is dark. DARKNESS = UNKNOWN = HIGH RISK.
-3. Start your response with a brief visual description of what you see.
-4. If you see people, describe their behavior. If you see a clear path, describe it.
+3. If it is dark, ALWAYS recommend moving to an area with more lighting or a well-lit public space.
+4. Start your response with a brief visual description of what you see.
+5. If you see people, describe their behavior. If you see a clear path, describe it.
 
 FORMAT: You MUST respond in valid JSON format ONLY.
 {
@@ -134,31 +134,23 @@ FORMAT: You MUST respond in valid JSON format ONLY.
       console.log("[GEMINI] Sending text-only request (No image provided)");
     }
 
-    // NEW RESILIENT FALLBACK CHAIN:
-    // 1. Gemini 2.5 Flash (Latest)
-    // 2. Gemini 2.0 Flash (Fast)
-    // 3. Gemini 1.5 Flash (Most reliable quota)
-    // 4. Gemini 1.5 Pro (Powerful)
+    // SDK-first approach with REST fallback
     let textRaw;
     try {
-      textRaw = await callGeminiRest(contents, "gemini-2.5-flash");
-    } catch (e) {
-      console.warn("[GEMINI] 2.5-flash failed, trying 2.0-flash...");
+      console.log("[STRATEGY] Using SDK as primary...");
+      textRaw = await analyzeSafetyWithGenai(prompt, image_frame_base64, 'gemini-2.5-flash');
+    } catch (sdkError) {
+      console.warn(`[STRATEGY] SDK failed: ${sdkError.message}. Falling back to REST...`);
       try {
-        textRaw = await callGeminiRest(contents, "gemini-2.0-flash");
-      } catch (e2) {
-        console.warn("[GEMINI] 2.0-flash failed, trying 1.5-flash (Quota Fallback)...");
-        try {
-          textRaw = await callGeminiRest(contents, "gemini-1.5-flash");
-        } catch (e3) {
-          console.warn("[GEMINI] 1.5-flash failed, trying 1.5-pro...");
-          try {
-            textRaw = await callGeminiRest(contents, "gemini-1.5-pro");
-          } catch (e4) {
-            console.error("[GEMINI] ALL MULTIMODAL MODELS FAILED OR QUOTA EXCEEDED.");
-            throw new Error("AI Quota Exceeded. Please wait a few minutes before retrying.");
-          }
+        // Fallback to the original, resilient REST implementation
+        const contents = [{ parts: [{ text: prompt }] }];
+        if (image_frame_base64) {
+          contents[0].parts.push({ inline_data: { mime_type: "image/jpeg", data: image_frame_base64 } });
         }
+        textRaw = await callGeminiRest(contents, "gemini-2.5-flash");
+      } catch (restError) {
+        console.error("[STRATEGY] Both SDK and REST fallback failed.");
+        throw new Error("AI services are temporarily unavailable. Please try again later.");
       }
     }
 
@@ -174,7 +166,7 @@ FORMAT: You MUST respond in valid JSON format ONLY.
   }
 });
 
-app.get("/health", (req, res) => res.json({ status: "ok", version: "1.9.1-REST-DEBUG" }));
+app.get("/health", (req, res) => res.json({ status: "ok", version: "2.0.0-SDK-STABLE" }));
 
 app.post("/get-safe-route", (req, res) => res.json({
   destination: "Nearest Security Center",
@@ -183,4 +175,4 @@ app.post("/get-safe-route", (req, res) => res.json({
 }));
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Server running on port ${PORT} - v1.9.1 (REST DEBUG)`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT} - v2.0.0 (SDK STABLE)`));

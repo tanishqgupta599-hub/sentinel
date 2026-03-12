@@ -339,6 +339,12 @@ function App() {
       // 4. Frontend logic based on risk level
       let { risk_level, spoken_response, recommendations } = analysis;
 
+      // ENHANCED SPEECH: Include recommendations in the spoken output if they exist
+      if (recommendations && recommendations.length > 0) {
+        const recommendationsText = ` My key recommendations are: ${recommendations.join(". ")}.`;
+        spoken_response = `${spoken_response}${recommendationsText}`;
+      }
+
       // DETERMINISTIC ESCALATION LOGIC
       const discomfortKeywords = ["uncomfortable", "unsafe", "scared", "not safe"];
       const userExpressedDiscomfort = discomfortKeywords.some(k => userText.toLowerCase().includes(k));
