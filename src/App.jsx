@@ -490,15 +490,13 @@ function App() {
 
   /**
    * 2. Google Maps INITIALIZATION Logic
-   * Uses a combination of safeRoute state and the loaded flag.
+   * FIXED: Added explicit zoom and manual bounds handling for the demo.
    */
   useEffect(() => {
     let retryCount = 0;
     const maxRetries = 20;
 
     const initMap = () => {
-      console.log("[MAP-DEBUG] Attempting init. safeRoute:", !!safeRoute, "DOM ready:", !!mapRef.current, "Google ready:", !!(window.google && window.google.maps));
-      
       if (!safeRoute || !mapRef.current) {
         if (safeRoute && !mapRef.current && retryCount < maxRetries) {
           retryCount++;
@@ -509,7 +507,6 @@ function App() {
 
       try {
         if (!window.google || !window.google.maps) {
-          console.warn("[MAP-DEBUG] window.google not available yet. Retrying...");
           if (retryCount < maxRetries) {
             retryCount++;
             setTimeout(initMap, 1000);
@@ -517,12 +514,15 @@ function App() {
           return;
         }
 
-        console.log("[MAP-DEBUG] Rendering map on screen...");
+        console.log("[MAP-DEBUG] Rendering zoomed-in map...");
         
+        const center = safeRoute.user_coords || safeRoute.destination_coords;
         const mapOptions = {
-          center: safeRoute.user_coords || safeRoute.destination_coords,
-          zoom: 13,
+          center: center,
+          zoom: 17, // Much closer zoom for the local demo
           disableDefaultUI: true,
+          mapTypeId: 'roadmap',
+          gestureHandling: 'greedy',
           styles: [
             { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
             { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
@@ -548,7 +548,7 @@ function App() {
           icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Add Polyline
+        // Add Polyline and Adjust View
         if (safeRoute.polyline && window.google.maps.geometry) {
           const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
           new window.google.maps.Polyline({
@@ -560,14 +560,30 @@ function App() {
             map
           });
 
-          const bounds = new window.google.maps.LatLngBounds();
-          bounds.extend(safeRoute.user_coords);
-          decodedPath.forEach(p => bounds.extend(p));
-          map.fitBounds(bounds);
+          // Wait a split second for the container to stabilize before fitting bounds
+          setTimeout(() => {
+            const bounds = new window.google.maps.LatLngBounds();
+            bounds.extend(safeRoute.user_coords);
+            decodedPath.forEach(p => bounds.extend(p));
+            map.fitBounds(bounds, 50); // Added padding
+            
+            // If the points are too close, fitBounds might zoom in too much or stay out.
+            // We force a reasonable zoom after fitBounds.
+            const listener = window.google.maps.event.addListener(map, "idle", () => {
+              if (map.getZoom() > 18) map.setZoom(17);
+              if (map.getZoom() < 10) map.setZoom(17); // Prevent world view
+              window.google.maps.event.removeListener(listener);
+            });
+          }, 200);
+        } else {
+          // If no polyline, just ensure we are centered and zoomed
+          map.setCenter(center);
+          map.setZoom(17);
         }
-        console.log("[MAP-DEBUG] SUCCESS: Map and Route rendered.");
+        
+        console.log("[MAP-DEBUG] SUCCESS: Zoomed map rendered.");
       } catch (err) {
-        console.error("[MAP-DEBUG] ERROR during render:", err);
+        console.error("[MAP-DEBUG] render error:", err);
       }
     };
 
