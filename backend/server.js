@@ -134,23 +134,30 @@ FORMAT: You MUST respond in valid JSON format ONLY.
       console.log("[GEMINI] Sending text-only request (No image provided)");
     }
 
-    // Attempt with 2.5-flash first (latest), fallback to 2.0-flash, then 2.5-pro
+    // NEW RESILIENT FALLBACK CHAIN:
+    // 1. Gemini 2.5 Flash (Latest)
+    // 2. Gemini 2.0 Flash (Fast)
+    // 3. Gemini 1.5 Flash (Most reliable quota)
+    // 4. Gemini 1.5 Pro (Powerful)
     let textRaw;
     try {
       textRaw = await callGeminiRest(contents, "gemini-2.5-flash");
     } catch (e) {
-      console.warn("[GEMINI] 2.5-flash failed, trying 2.0-flash fallback...");
+      console.warn("[GEMINI] 2.5-flash failed, trying 2.0-flash...");
       try {
         textRaw = await callGeminiRest(contents, "gemini-2.0-flash");
       } catch (e2) {
-        console.warn("[GEMINI] 2.0-flash failed, trying 2.5-pro fallback...");
+        console.warn("[GEMINI] 2.0-flash failed, trying 1.5-flash (Quota Fallback)...");
         try {
-          textRaw = await callGeminiRest(contents, "gemini-2.5-pro");
+          textRaw = await callGeminiRest(contents, "gemini-1.5-flash");
         } catch (e3) {
-          console.error("[GEMINI] All multimodal fallbacks failed, using 2.0-flash (text-only)...");
-          // Final fallback to text-only if multimodal fails completely
-          const textOnlyContents = [{ parts: [{ text: prompt + "\nNOTE: Image data failed to load. Evaluate based on user text only but warn user." }] }];
-          textRaw = await callGeminiRest(textOnlyContents, "gemini-2.0-flash");
+          console.warn("[GEMINI] 1.5-flash failed, trying 1.5-pro...");
+          try {
+            textRaw = await callGeminiRest(contents, "gemini-1.5-pro");
+          } catch (e4) {
+            console.error("[GEMINI] ALL MULTIMODAL MODELS FAILED OR QUOTA EXCEEDED.");
+            throw new Error("AI Quota Exceeded. Please wait a few minutes before retrying.");
+          }
         }
       }
     }
