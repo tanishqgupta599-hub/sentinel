@@ -490,7 +490,7 @@ function App() {
 
   /**
    * 2. Google Maps INITIALIZATION Logic
-   * FIXED: Added explicit zoom and manual bounds handling for the demo.
+   * FINAL STABILITY FIX: Fixed coordinate object structure and prevented Ocean (0,0) view.
    */
   useEffect(() => {
     let retryCount = 0;
@@ -514,15 +514,23 @@ function App() {
           return;
         }
 
-        console.log("[MAP-DEBUG] Rendering zoomed-in map...");
+        // ENSURE COORDINATES ARE VALID AND USE {lat, lng} STRUCTURE
+        // Fallback to constants if anything is missing
+        const userLat = safeRoute.user_coords?.lat || MOCK_LOCATION.latitude;
+        const userLng = safeRoute.user_coords?.lng || MOCK_LOCATION.longitude;
+        const destLat = safeRoute.destination_coords?.lat || SAFE_CHECKPOINT.latitude;
+        const destLng = safeRoute.destination_coords?.lng || SAFE_CHECKPOINT.longitude;
+
+        const center = { lat: userLat, lng: userLng };
+        const destination = { lat: destLat, lng: destLng };
+
+        console.log("[MAP-DEBUG] Initializing at:", center);
         
-        const center = safeRoute.user_coords || safeRoute.destination_coords;
         const mapOptions = {
           center: center,
-          zoom: 17, // Much closer zoom for the local demo
+          zoom: 16, 
           disableDefaultUI: true,
           mapTypeId: 'roadmap',
-          gestureHandling: 'greedy',
           styles: [
             { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
             { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
@@ -533,22 +541,22 @@ function App() {
         const map = new window.google.maps.Map(mapRef.current, mapOptions);
         googleMapInstance.current = map;
 
-        // Add Markers
+        // Add Markers with guaranteed {lat, lng}
         new window.google.maps.Marker({
-          position: safeRoute.user_coords,
+          position: center,
           map,
           title: 'Start',
           icon: { path: window.google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: '#38bdf8', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
         new window.google.maps.Marker({
-          position: safeRoute.destination_coords,
+          position: destination,
           map,
-          title: safeRoute.destination,
+          title: safeRoute.destination || 'City Police Station',
           icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: '#ffffff' }
         });
 
-        // Add Polyline and Adjust View
+        // Add Polyline
         if (safeRoute.polyline && window.google.maps.geometry) {
           const decodedPath = window.google.maps.geometry.encoding.decodePath(safeRoute.polyline);
           new window.google.maps.Polyline({
@@ -560,28 +568,14 @@ function App() {
             map
           });
 
-          // Wait a split second for the container to stabilize before fitting bounds
-          setTimeout(() => {
-            const bounds = new window.google.maps.LatLngBounds();
-            bounds.extend(safeRoute.user_coords);
-            decodedPath.forEach(p => bounds.extend(p));
-            map.fitBounds(bounds, 50); // Added padding
-            
-            // If the points are too close, fitBounds might zoom in too much or stay out.
-            // We force a reasonable zoom after fitBounds.
-            const listener = window.google.maps.event.addListener(map, "idle", () => {
-              if (map.getZoom() > 18) map.setZoom(17);
-              if (map.getZoom() < 10) map.setZoom(17); // Prevent world view
-              window.google.maps.event.removeListener(listener);
-            });
-          }, 200);
-        } else {
-          // If no polyline, just ensure we are centered and zoomed
-          map.setCenter(center);
-          map.setZoom(17);
+          // Fit view to include both points
+          const bounds = new window.google.maps.LatLngBounds();
+          bounds.extend(center);
+          bounds.extend(destination);
+          map.fitBounds(bounds, 50);
         }
         
-        console.log("[MAP-DEBUG] SUCCESS: Zoomed map rendered.");
+        console.log("[MAP-DEBUG] SUCCESS: Zoomed map rendered at local coordinates.");
       } catch (err) {
         console.error("[MAP-DEBUG] render error:", err);
       }
