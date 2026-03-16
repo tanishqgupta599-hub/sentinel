@@ -130,6 +130,25 @@ gcloud run deploy sentinel-api \
 - **POST `/analyze-safety`**: Core multimodal analysis endpoint.
 - **POST `/get-safe-route`**: Returns navigation data for the safety checkpoint.
 
+## Testing & Reproducibility 🧪
+
+To ensure a consistent and reliable evaluation, use the following methods to verify the system:
+
+### 1. SDK Verification (Backend)
+Run the isolation test to confirm the @google/generative-ai SDK is correctly configured:
+```bash
+node --env-file=backend/.env backend/test-sdk.js
+```
+**Expected Output**: `SDK SUCCESS: The capital of India is New Delhi.`
+
+### 2. API Diagnostics
+- **Health Check**: Visit `/health` to verify the SDK version (`2.0.0-SDK-STABLE`).
+- **Model Check**: Visit `/debug-api` to see all Gemini models available to your key.
+
+### 3. Reproducing the Safety Flow (Frontend)
+- **High-Risk Trigger**: Cover your camera lens and ask "Am I safe?". The AI will detect the darkness, trigger **CRITICAL mode**, and start navigation.
+- **Safe Arrival**: Ask "Am I at the station?". The system uses the preset demo coordinates to confirm your arrival at the **City Police Station**.
+
 ---
 
 ## Project Checkpoint 💾
